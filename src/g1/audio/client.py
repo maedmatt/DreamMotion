@@ -56,7 +56,7 @@ class UnitreeAudioService:
         client.SetTimeout(config.timeout_seconds)
         self._client = client
 
-    def say_text(self, text: str, speaker_id: int = 0) -> dict[str, object]:
+    def say_text(self, text: str, speaker_id: int = 1) -> dict[str, object]:
         message = text.strip()
         if not message:
             raise ValueError("Text to speak must not be empty.")

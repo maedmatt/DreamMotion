@@ -5,6 +5,9 @@ requires-python = ">=3.11"
 dependencies = [
     "strands-agents[openai]",
     "httpx",
+    "openai",
+    "python-dotenv",
+    "sounddevice",
 ]
 
 [project.scripts]
