@@ -1,0 +1,36 @@
+[project]
+name = "g1-treasure-hunt"
+version = "0.0.1"
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "ruff",
+    "basedpyright",
+]
+
+[tool.ruff]
+target-version = "py311"
+src = ["src", "devtools", "scripts"]
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+    "TCH", # flake8-type-checking
+    "RUF", # ruff-specific
+    "FA",  # flake8-future-annotations
+    "PTH", # flake8-use-pathlib
+]
+
+[tool.basedpyright]
+pythonVersion = "3.11"
+typeCheckingMode = "standard"
+include = ["src", "devtools", "scripts"]
