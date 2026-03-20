@@ -5,7 +5,7 @@ from textwrap import dedent
 from strands import Agent
 from strands.models.openai import OpenAIModel
 
-from g1.tools.generate_motion import generate_motion
+from agent.tools.generate_motion import generate_motion
 
 SYSTEM_PROMPT = dedent("""
     You are a motion planner for the Unitree G1 humanoid robot.

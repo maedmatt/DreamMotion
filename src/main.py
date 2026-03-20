@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from g1.agent import create_agent
+from dotenv import load_dotenv
+
+from agent.agent import create_agent
 
 
 def main() -> None:
+    load_dotenv()
     agent = create_agent()
 
     print("G1 motion agent ready. Type 'exit' to quit.")
@@ -14,11 +17,8 @@ def main() -> None:
             break
         if user_input.strip().lower() in ("exit", "quit"):
             break
-        result = agent(user_input)
-        for block in result.message.get("content", []):
-            if "text" in block:
-                print(f"\n{block['text']}")
-                break
+        agent(user_input)
+        print()
 
 
 if __name__ == "__main__":
