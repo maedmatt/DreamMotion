@@ -7,7 +7,7 @@ from pathlib import Path
 import httpx
 from strands import tool
 
-from g1.prompt_refiner import refine_prompt
+from agent.prompt_refiner import refine_prompt
 
 KIMODO_URL = os.environ.get("KIMODO_URL", "http://localhost:8420")
 OUTPUT_DIR = Path("output")
@@ -71,11 +71,13 @@ def generate_motion(description: str, diffusion_steps: int = 50) -> dict:
     results = []
     for prompt, duration in zip(prompts, durations, strict=True):
         qpos_path = _call_kimodo(prompt, duration, diffusion_steps)
-        results.append({
-            "qpos_path": str(qpos_path),
-            "prompt": prompt,
-            "duration": duration,
-        })
+        results.append(
+            {
+                "qpos_path": str(qpos_path),
+                "prompt": prompt,
+                "duration": duration,
+            }
+        )
 
     output: dict = {"motions": results}
     if warning:

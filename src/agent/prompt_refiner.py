@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 from __future__ import annotations
 
 import json
@@ -109,4 +110,5 @@ def refine_prompt(user_description: str) -> dict:
         ],
         response_format={"type": "json_object"},
     )
-    return json.loads(response.choices[0].message.content)
+    content = response.choices[0].message.content or "{}"
+    return json.loads(content)

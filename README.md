@@ -30,7 +30,7 @@ curl http://localhost:8420/health
 ### Agent (interactive)
 
 ```bash
-OPENAI_API_KEY=sk-... uv run g1
+OPENAI_API_KEY=sk-... uv run agent
 ```
 
 Describe a motion and the agent calls Kimodo to generate it. Results are saved as CSV in `output/`.
