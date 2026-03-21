@@ -10,10 +10,13 @@ dependencies = [
     "sounddevice",
     "pyzmq",
     "tyro",
+    "fastapi",
+    "uvicorn",
 ]
 
 [project.scripts]
 agent = "main:main"
+web = "web.server:main"
 
 [dependency-groups]
 dev = [
@@ -27,7 +30,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/agent", "src/g1"]
+packages = ["src/agent", "src/g1", "src/web"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "src/main.py" = "main.py"
