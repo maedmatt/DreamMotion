@@ -445,13 +445,17 @@ def main() -> None:
                 status = "Waiting for camera frames..."
             else:
                 preview = frame.color.copy()
-                if prompt and prompt == det_prompt and det_frame_id == frame_id:
+                overlay_detections = prompt and prompt == det_prompt
+                if overlay_detections:
                     for detection in detections:
                         _draw_detection(preview, detection, show_pose=args.show_pose)
-                n = len(detections) if prompt else 0
+
+                n = len(detections) if overlay_detections else 0
+                lag = frame_id - det_frame_id if overlay_detections else 0
                 status = (
                     f"Prompt: {prompt if prompt else '<none>'} | "
-                    f"detector: {detector_status} | detections: {n}"
+                    f"detector: {detector_status} | detections: {n} | "
+                    f"lag: {lag} frame(s)"
                 )
 
             cv2.putText(
