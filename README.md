@@ -137,21 +137,20 @@ UNITREE_AUDIO_VOLUME=100
 
 ### Agent (interactive)
 
-Text mode:
-
 ```bash
-uv run agent --text
-```
-
-Microphone mode:
-
-```bash
-uv run agent --mic
+uv run agent                    # text input, all modules on
+uv run agent --mode mic         # microphone input
+uv run agent --no-tts           # disable robot speaker
+uv run agent --no-zmq           # disable ZMQ publishing
+uv run agent --no-tts --no-zmq  # motion generation only
+uv run agent --kimodo-url URL   # override Kimodo endpoint
 ```
 
 In microphone mode, press Enter to start recording, press Enter again to stop.
 
-Describe a motion and the agent calls Kimodo to generate it. Results are saved as CSV and `.pt` in `output/`. Generated motions are published over ZMQ (`tcp://*:5555`) for downstream consumers (tracking policy, visualizer, etc.).
+The agent runs preflight checks at startup — it verifies the OpenAI key, Kimodo health, network interface (if TTS), and microphone (if mic mode). Missing dependencies are caught before the loop starts.
+
+Results are saved as CSV and `.pt` in `output/`. Generated motions are published over ZMQ (`tcp://*:5555`) for downstream consumers (tracking policy, visualizer, etc.).
 
 ### ZMQ subscriber example
 

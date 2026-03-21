@@ -5,19 +5,20 @@ import os
 
 import zmq
 
-ZMQ_ADDRESS = os.environ.get("ZMQ_PUB_ADDRESS", "tcp://*:5555")
-
 _context: zmq.Context | None = None  # pyright: ignore[reportMissingTypeArgument]
 _socket: zmq.Socket | None = None  # pyright: ignore[reportMissingTypeArgument]
 
 
-def init_publisher() -> None:
+def init_publisher(
+    address: str | None = None,
+) -> None:
     """Bind the ZMQ PUB socket. Call once at startup."""
     global _context, _socket
+    addr = address or os.environ.get("ZMQ_PUB_ADDRESS", "tcp://*:5555")
     _context = zmq.Context()
     _socket = _context.socket(zmq.PUB)
-    _socket.bind(ZMQ_ADDRESS)  # pyright: ignore[reportOptionalMemberAccess]
-    print(f"ZMQ publisher bound to {ZMQ_ADDRESS}")
+    _socket.bind(addr)  # pyright: ignore[reportOptionalMemberAccess]
+    print(f"ZMQ publisher bound to {addr}")
 
 
 def publish_motion(
