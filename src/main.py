@@ -135,7 +135,7 @@ def main() -> None:
             print(f"  ERROR: {e}")
         sys.exit(1)
 
-    agent = create_agent(tts=cfg.tts)
+    agent = create_agent()
     print(f"\nG1 agent ready. mode={cfg.mode} tts={cfg.tts}")
 
     if cfg.mode == InputMode.mic:

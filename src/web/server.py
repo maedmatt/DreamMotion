@@ -36,7 +36,6 @@ from pydantic import BaseModel
 
 from agent.prompt_refiner import refine_prompt
 from agent.tools.generate_motion import _call_kimodo
-from g1.publisher import close_publisher, init_publisher, publish_motion
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +98,6 @@ class SpeakRequest(BaseModel):
 # In-memory stores
 # ---------------------------------------------------------------------------
 
-GENERATED_MOTIONS: dict[str, bytes] = {}
 GENERATED_MOTION_DATA: dict[str, dict[str, str]] = {}
 BOOTSTRAP_TASK_ID = "__bootstrap__"
 GENERATED_MOTION_DATA[BOOTSTRAP_TASK_ID] = {"prompt": "Ready", "csv": ""}
@@ -148,9 +146,7 @@ def api_generate(req: GenerateRequest):
     duration = durations[0]
 
     try:
-        qpos_path, _pt_path, pt_bytes = _call_kimodo(
-            prompt_text, duration, diffusion_steps
-        )
+        qpos_path, pt_path = _call_kimodo(prompt_text, duration, diffusion_steps)
     except httpx.HTTPError as exc:
         logger.exception("Kimodo generation failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -159,9 +155,10 @@ def api_generate(req: GenerateRequest):
     task_id = str(int(time.time() * 1000))
     csv_content = qpos_path.read_text() if qpos_path.exists() else ""
 
-    GENERATED_MOTION_DATA[task_id] = {"prompt": prompt_text, "csv": csv_content}
-    if pt_bytes:
-        GENERATED_MOTIONS[task_id] = pt_bytes
+    motion_data: dict[str, str] = {"prompt": prompt_text, "csv": csv_content}
+    if pt_path:
+        motion_data["pt_path"] = str(pt_path)
+    GENERATED_MOTION_DATA[task_id] = motion_data
 
     # 4. Generate text reply via LLM
     text_reply = _generate_reply(req.prompt, prompts, durations, warning)
@@ -242,16 +239,15 @@ def transcribe_audio(req: TranscribeRequest):
 
 @app.post("/api/deploy")
 def deploy_motion(req: DeployRequest):
-    pt_bytes = GENERATED_MOTIONS.get(req.task_id)
-    if not pt_bytes:
+    data = GENERATED_MOTION_DATA.get(req.task_id)
+    if not data:
         raise HTTPException(status_code=404, detail="Motion not found")
 
-    prompt = GENERATED_MOTION_DATA.get(req.task_id, {}).get("prompt", "")
-    publish_motion(
-        metadata={"prompt": prompt, "type": "deploy"},
-        pt_bytes=pt_bytes,
-    )
-    return {"status": "deployed"}
+    pt_path = data.get("pt_path")
+    if not pt_path:
+        raise HTTPException(status_code=404, detail="No .pt file for this motion")
+
+    return {"status": "deployed", "pt_path": pt_path}
 
 
 @app.post("/api/speak")
@@ -354,12 +350,6 @@ def _parse_args() -> argparse.Namespace:
         help="Kimodo diffusion steps (default: 50)",
     )
     parser.add_argument(
-        "--zmq-address",
-        default=None,
-        help="ZMQ PUB address (default: ZMQ_PUB_ADDRESS env or tcp://*:5555)",
-    )
-    parser.add_argument("--no-zmq", action="store_true", help="Disable ZMQ publishing")
-    parser.add_argument(
         "--transcribe-model",
         default=None,
         help="OpenAI STT model (default: gpt-4o-transcribe)",
@@ -394,10 +384,6 @@ def main() -> None:
 
     print("preflight checks:")
     errors = _preflight(kimodo_url)
-    if not args.no_zmq:
-        zmq_addr = args.zmq_address or os.environ.get("ZMQ_PUB_ADDRESS", "tcp://*:5555")
-        init_publisher(zmq_addr)
-        print(f"  zmq: ok ({zmq_addr})")
 
     if errors:
         for e in errors:
@@ -453,11 +439,7 @@ def main() -> None:
 
     threading.Thread(target=_open_browser, daemon=True).start()
 
-    try:
-        uvicorn.run(app, host="0.0.0.0", port=args.port, log_level="info")
-    finally:
-        if not args.no_zmq:
-            close_publisher()
+    uvicorn.run(app, host="0.0.0.0", port=args.port, log_level="info")
 
 
 if __name__ == "__main__":

@@ -18,13 +18,13 @@ agent = "main:main"
 deploy = "deploy.run:main"
 web = "web.server:main"
 
-[project.optional-dependencies]
-deploy = ["robojudo", "mujoco-python-viewer"]
-tts = ["unitree-sdk2py"]
+# [project.optional-dependencies]
+# deploy = ["robojudo", "mujoco-python-viewer"]
+# tts = ["unitree-sdk2py"]
 
-[tool.uv.sources]
-robojudo = { path = "../RoboJuDo", editable = true }
-unitree-sdk2py = { path = "../unitree_sdk2_python", editable = true }
+# [tool.uv.sources]
+# robojudo = { path = "../RoboJuDo", editable = true }
+# unitree-sdk2py = { path = "../unitree_sdk2_python", editable = true }
 
 [dependency-groups]
 dev = [
