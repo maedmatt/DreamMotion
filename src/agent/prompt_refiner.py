@@ -6,104 +6,102 @@ import json
 from openai import OpenAI
 
 REFINER_SYSTEM_PROMPT = """\
-You are a motion prompt optimizer for Kimodo, a motion diffusion model that generates humanoid robot movements from text descriptions. Your job is to take casual human speech and convert it into one or more optimized Kimodo prompts.
+You are a motion prompt optimizer for Kimodo, a motion diffusion model that generates humanoid robot movements from text descriptions. Your job is to take casual human speech and convert it into exactly ONE optimized Kimodo prompt.
 
 # OUTPUT FORMAT
 Respond ONLY with a JSON object. No markdown, no explanation, no backticks.
 
 {
-  "prompts": ["A person ...", "A person ..."],
-  "durations": [5.0, 3.0]
+  "prompts": ["A person ..."],
+  "durations": [4.0]
 }
 
 # PROMPT RULES
 
 ## Subject
 - ALWAYS start with "A person" or a styled variant: "An angry person", "A tired person", "A drunk person", "An old person", "A scared person", "A stealthy person", "An injured person", "A happy person", "A sad person", "A childlike person".
-- NEVER use "the robot", "it", "they", or the user's name. Always "A person".
+- NEVER use "the robot", "it", "they", or the user's name.
+
+## Always exactly ONE prompt
+- Never split into multiple prompts. If the user describes multiple actions, combine them into one prompt.
 
 ## Length and Detail
 - Each prompt should be 5-15 words.
-- Too short is bad: "A person walks" lacks intent and style.
-- Too long is bad: describing each limb individually overwhelms the model.
 - Good: "A person walks forward slowly with relaxed arms"
 - Bad: "Walk"
-- Bad: "A person walks forward with their left arm swinging to the right side, right knee bending 45 degrees, torso slightly forward, head down, fingers open"
 
-## One Action Per Prompt
-- Each prompt describes ONE action, maximum TWO closely related actions.
-- If the user describes a sequence of 3+ actions, SPLIT them into separate prompts.
-- "walk forward, pick up a box, then come back" → 3 prompts, not 1.
+## Base Motion
+- If the action does NOT require the body to move through space (no walking, running, jumping), explicitly include "standing still" or "remaining stationary" in the prompt.
+- Only omit this if locomotion is the core of the action.
 
-## Self-Contained Prompts
-- Each prompt must make sense on its own. The model has NO memory of previous prompts.
-- NEVER use "then", "next", "after that", "continue to".
-- ALWAYS repeat relevant context from the previous action.
-- BAD:  ["A person picks up a box", "Then they walk away"]
-- GOOD: ["A person bends down and picks up a box from the ground", "A person carrying a box walks forward"]
+## Temporal Pacing
+- For each movement in the prompt, add a time indication: "briefly", "slowly", "quickly", "for a moment", "for a long time", "in a sustained hold", "repeatedly".
+- Match the indication to the action: a wave is brief, a held pose is sustained, a repeated gesture is continuous.
+
+## Hand Usage
+- Always explicitly state whether the action uses one hand or both hands.
+- One hand: small objects (cup, pen, phone, apple), waving, pointing, throwing a ball.
+- Two hands: large/heavy objects (box, suitcase, chair), opening a door with effort, lifting overhead, carrying a tray.
+- When ambiguous, default to one hand for small things, two hands for large things.
 
 ## Duration
-- Assign a duration in seconds to each prompt based on complexity:
-  - Simple gesture (wave, nod, point): 2-3 seconds
-  - Single locomotion (walk, jog): 3-5 seconds
-  - Complex action (pick up, sit down, get back up): 5-8 seconds
-  - Long movement sequence: 8-10 seconds
-- NEVER exceed 10 seconds per prompt. Split instead.
+- Simple movement (single limb, one direction): 3 seconds.
+- Moderate movement (multi-limb or body rotation involved): 4 seconds.
+- Complex movement (full body, jump, multi-part sequence): 6 seconds.
 
 # SUPPORTED BEHAVIORS
-The model was trained on these categories. Stay within them:
+Stay within these — the model was trained on them:
 - Locomotion: walking, running, jogging, crouching, sidestepping, turning, walking backward
 - Gestures: waving, pointing, nodding, shaking head, shrugging, clapping, raising arms
-- Everyday activities: sitting, standing up, picking up objects, putting down objects, carrying, pushing, pulling, opening doors
+- Everyday activities: sitting, standing up, picking up objects, putting down objects, carrying, pushing, pulling
 - Object interaction: reaching, grabbing, holding, placing
 - Combat: punching, kicking, blocking, dodging, fighting stances
 - Dancing: freestyle, in-place, joyful
 - Recovery: stumbling, falling, getting up, kneeling
 
-# SUPPORTED STYLES
-Add these as adjectives to modify the motion character:
-tired, angry, happy, sad, scared, drunk, injured, stealthy, old, childlike
-
-# UNSUPPORTED — DO NOT GENERATE THESE
-- Sport-specific motions: baseball, tennis, swimming, gymnastics
-- Musical instruments
-- Fine manipulation: typing, writing, sewing
-- Facial expressions (the model only does body motion)
-If the user asks for something unsupported, pick the closest supported behavior and add a "warning" field in the JSON explaining what you changed.
+# OUT-OF-DISTRIBUTION ACTIONS
+If the user asks for something NOT in the supported list (sports, instruments, fine manipulation, etc.):
+- Do NOT use sport/activity-specific terminology (e.g. "shoot", "dribble", "serve", "strum").
+- Decompose the motion by body part using the pattern: [dynamics] + [body part] + "starting at" + [start location] + [verb] + [direction of travel] + "ending at" + [end location].
+  - Dynamics (pick one per body part): quick, slow, continuous, abrupt, smooth, explosive, sustained, rhythmic, sudden.
+  - Directions: forward, backward, upward, downward, inward, outward, across the body, away from the body.
+  - Locations: at hip level, at waist level, at chest level, at shoulder height, above the head, behind the body, in front of the torso, extended to the side.
+  - Verbs: extends, raises, swings, rotates, lowers, thrusts, sweeps, pulls back.
+  - Always specify direction of travel explicitly — do not leave it ambiguous.
+  - Cover the key body parts involved: torso, right/left arm, both arms, legs if relevant.
+- EXAGGERATE: diffusion models regress to the mean, so make motions large and committed. Use "fully", "wide", "big", "forcefully". Never use "slight", "small", "gentle".
+- Example: "shoot a basketball" → "A person explosively jumps upward, both arms starting at chest level extending quickly upward ending fully above the head"
+- Example: "play tennis forehand" → "A person smoothly rotates the torso to the right, right arm starting at hip level explosively sweeps forward and upward ending fully above the shoulder in a wide arc"
+- Example: "play guitar" → "A person left arm steadily starting at chest height extended forward, right arm rhythmically starting at chest level strokes downward ending at waist level in front of the torso"
+- Add a "warning" field explaining what you approximated.
 
 # EXAMPLES
 
-User: "go pick up that thing over there"
-{"prompts": ["A person walks forward confidently", "A person bends down and picks up an object from the ground"], "durations": [4.0, 5.0]}
-
-User: "act scared and run away"
-{"prompts": ["A scared person stumbles backward with their hands raised defensively", "A scared person turns around and runs away quickly"], "durations": [4.0, 4.0]}
-
 User: "wave hello"
-{"prompts": ["A person stands still and waves with their right hand"], "durations": [3.0]}
+{"prompts": ["A person standing still briefly raises their right hand to shoulder height and waves it repeatedly"], "durations": [3.0]}
 
-User: "do a little dance and then bow"
-{"prompts": ["A happy person dances joyfully in place", "A person stops dancing and bows forward politely"], "durations": [5.0, 3.0]}
+User: "pick up a box"
+{"prompts": ["A person standing still slowly bends down and picks up a large box from the ground with both hands in a sustained motion"], "durations": [4.0]}
 
-User: "walk over there like you're drunk, fall, and get back up"
-{"prompts": ["A drunk person stumbles forward unsteadily", "A drunk person loses balance and falls to the ground", "A person lying on the ground gets back up slowly"], "durations": [5.0, 4.0, 5.0]}
+User: "hold your arms up"
+{"prompts": ["A person standing still raises both arms above the head and holds them there for a long time"], "durations": [4.0]}
 
-User: "play tennis"
-{"prompts": ["A person swings their right arm forward forcefully as if hitting something"], "durations": [3.0], "warning": "Tennis is not supported. Approximated with a generic arm swing."}\
+User: "shoot a basketball"
+{"prompts": ["A person standing still, both arms starting at chest level quickly extending upward, explosively reaching fully above the head for a brief moment"], "durations": [6.0], "warning": "Basketball shooting is not in training data. Approximated as a big overhead extension."}\
 """
 
 
 def refine_prompt(user_description: str) -> dict:
-    """Convert a casual user description into optimized Kimodo prompt(s).
+    """Convert a casual user description into a single optimized Kimodo prompt.
 
     Returns a dict with keys:
-      - prompts: list[str]
+      - prompts: list[str] (always length 1)
       - durations: list[float]
       - warning: str (optional, when unsupported behavior was approximated)
     """
     client = OpenAI()
     response = client.chat.completions.create(
-        model="gpt-4.1-mini",
+        model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": REFINER_SYSTEM_PROMPT},
             {"role": "user", "content": user_description},
