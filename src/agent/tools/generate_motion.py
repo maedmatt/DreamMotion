@@ -15,6 +15,17 @@ log = logging.getLogger(__name__)
 
 OUTPUT_DIR = Path("output")
 
+# fmt: off
+# Default standing joint angles (29 DOFs) — shared with AgentTrackerPolicy
+DEFAULT_DOF_POS = [
+    -0.312,  0.0,    0.0,   0.669, -0.363,  0.0,    # left leg
+    -0.312,  0.0,    0.0,   0.669, -0.363,  0.0,    # right leg
+     0.0,    0.0,    0.0,                            # waist
+     0.2,    0.2,    0.0,   0.6,   0.0, 0.0, 0.0,   # left arm
+     0.2,   -0.2,    0.0,   0.6,   0.0, 0.0, 0.0,   # right arm
+]
+# fmt: on
+
 
 def _kimodo_url() -> str:
     return os.environ.get("KIMODO_URL", "http://localhost:8420")
@@ -27,10 +38,22 @@ CSV_HEADER = "root_x,root_y,root_z,quat_w,quat_x,quat_y,quat_z," + ",".join(
 
 
 def _call_kimodo(
-    prompt: str, duration: float, diffusion_steps: int
+    prompt: str,
+    duration: float,
+    diffusion_steps: int,
+    initial_dof_pos: list[float] | None = None,
+    final_dof_pos: list[float] | None = None,
 ) -> tuple[Path, Path | None, bytes | None]:
     """Call Kimodo API for a single prompt and save qpos as CSV and .pt."""
-    body = {"prompt": prompt, "duration": duration, "diffusion_steps": diffusion_steps}
+    body: dict = {
+        "prompt": prompt,
+        "duration": duration,
+        "diffusion_steps": diffusion_steps,
+    }
+    if initial_dof_pos is not None:
+        body["initial_dof_pos"] = initial_dof_pos
+    if final_dof_pos is not None:
+        body["final_dof_pos"] = final_dof_pos
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
 
@@ -96,7 +119,11 @@ def generate_motion(description: str, diffusion_steps: int = 50) -> dict:
     for prompt, duration in zip(prompts, durations, strict=True):
         try:
             qpos_path, pt_path, pt_bytes = _call_kimodo(
-                prompt, duration, diffusion_steps
+                prompt,
+                duration,
+                diffusion_steps,
+                # initial_dof_pos=DEFAULT_DOF_POS,
+                # final_dof_pos=DEFAULT_DOF_POS,
             )
         except httpx.HTTPError:
             log.warning("Kimodo call failed for prompt: %s", prompt, exc_info=True)
