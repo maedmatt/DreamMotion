@@ -92,10 +92,10 @@ ssh -L 8420:localhost:8420 -L 7860:localhost:7860 <remote-host>
 
 - `localhost:7860` — Kimodo visualizer ([Viser](https://github.com/nerfstudio-project/viser)), requires SSH tunnel
 
-Verify the connection:
+Verify the connection (ngrok requires the skip-browser-warning header):
 
 ```bash
-curl http://localhost:8420/health
+curl -H "ngrok-skip-browser-warning: true" http://localhost:8420/health
 ```
 
 ### Environment
@@ -130,13 +130,42 @@ Results are saved as CSV and `.pt` in `output/`. Generated motions are published
 
 ### Direct API
 
+The Kimodo server exposes three generation endpoints, all accepting the same request body:
+
+| Endpoint | Response |
+|---|---|
+| `POST /generate` | JSON with `qpos` trajectory |
+| `POST /generate/csv` | Downloadable CSV file |
+| `POST /generate/pt` | Binary ProtoMotions MotionLib `.pt` file |
+| `GET /health` | Model status, device info, GPU memory |
+
+All requests to ngrok URLs require the header `ngrok-skip-browser-warning: true`.
+
 ```bash
 curl -X POST http://localhost:8420/generate \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "A person walks forward", "duration": 2.0, "diffusion_steps": 50}'
+  -H "ngrok-skip-browser-warning: true" \
+  -d '{
+    "prompt": "A person walks forward",
+    "duration": 3.0,
+    "diffusion_steps": 50
+  }'
 ```
 
-Returns JSON with a `qpos` array — each frame is 36 values (root xyz, root quaternion wxyz, 29 joint angles).
+Request body fields:
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `prompt` | string | *required* | Motion description. Multiple sentences are treated as sequential segments. |
+| `duration` | float | 3.0 | Motion length in seconds (0.5–30.0). Output is 30 fps. |
+| `diffusion_steps` | int | 100 | Denoising steps. 50 is fast (~2s), 100 is higher quality (~4s). |
+| `num_samples` | int | 1 | Number of motion variations (1–4). |
+| `num_transition_frames` | int | 5 | Blending frames between sequential prompt segments. |
+| `initial_dof_pos` | float[29] | — | Joint angles in radians for soft pose guidance on frame 0. |
+| `final_dof_pos` | float[29] | — | Joint angles in radians for soft pose guidance on the last frame. |
+| `constraints` | array | — | Raw Kimodo constraint dicts (root2d, fullbody, end-effector). |
+
+Each output frame has 36 values: root position xyz (3), root quaternion wxyz (4), and 29 joint angles in radians. Set client timeout to at least 60 seconds.
 
 ## Development
 

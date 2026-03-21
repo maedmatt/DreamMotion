@@ -31,10 +31,7 @@ def _kimodo_url() -> str:
     return os.environ.get("KIMODO_URL", "http://localhost:8420")
 
 
-# 36 values per frame: root position (3), root quaternion wxyz (4), joint angles (29)
-CSV_HEADER = "root_x,root_y,root_z,quat_w,quat_x,quat_y,quat_z," + ",".join(
-    f"joint_{i}" for i in range(29)
-)
+KIMODO_HEADERS = {"ngrok-skip-browser-warning": "true"}
 
 
 def _call_kimodo(
@@ -43,8 +40,11 @@ def _call_kimodo(
     diffusion_steps: int,
     initial_dof_pos: list[float] | None = None,
     final_dof_pos: list[float] | None = None,
+    num_samples: int = 1,
+    num_transition_frames: int = 5,
+    constraints: list[dict] | None = None,
 ) -> tuple[Path, Path | None, bytes | None]:
-    """Call Kimodo API for a single prompt and save qpos as CSV and .pt."""
+    """Call Kimodo API and save results as CSV and .pt."""
     body: dict = {
         "prompt": prompt,
         "duration": duration,
@@ -54,30 +54,35 @@ def _call_kimodo(
         body["initial_dof_pos"] = initial_dof_pos
     if final_dof_pos is not None:
         body["final_dof_pos"] = final_dof_pos
+    if num_samples != 1:
+        body["num_samples"] = num_samples
+    if num_transition_frames != 5:
+        body["num_transition_frames"] = num_transition_frames
+    if constraints:
+        body["constraints"] = constraints
+
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
+    url = _kimodo_url()
 
-    # JSON endpoint → CSV
-    response = httpx.post(
-        f"{_kimodo_url()}/generate",
+    # CSV endpoint → human-readable qpos record
+    csv_response = httpx.post(
+        f"{url}/generate/csv",
+        headers=KIMODO_HEADERS,
         json=body,
         timeout=120.0,
     )
-    response.raise_for_status()
-    data = response.json()
+    csv_response.raise_for_status()
+    csv_path = OUTPUT_DIR / f"qpos_{timestamp}.csv"
+    csv_path.write_bytes(csv_response.content)
 
-    qpos = data["qpos"]
-    qpos_path = OUTPUT_DIR / f"qpos_{timestamp}.csv"
-    lines = [CSV_HEADER]
-    lines.extend(",".join(str(v) for v in frame) for frame in qpos)
-    qpos_path.write_text("\n".join(lines))
-
-    # PT endpoint → raw tensor (best-effort)
+    # PT endpoint → MotionLib tensor for sim and ZMQ (best-effort)
     pt_path = None
     pt_bytes = None
     try:
         pt_response = httpx.post(
-            f"{_kimodo_url()}/generate/pt",
+            f"{url}/generate/pt",
+            headers=KIMODO_HEADERS,
             json=body,
             timeout=120.0,
         )
@@ -88,7 +93,7 @@ def _call_kimodo(
     except httpx.HTTPError:
         log.warning("Failed to fetch .pt from Kimodo, skipping")
 
-    return qpos_path, pt_path, pt_bytes
+    return csv_path, pt_path, pt_bytes
 
 
 @tool

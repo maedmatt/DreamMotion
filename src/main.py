@@ -43,7 +43,11 @@ def preflight(cfg: Config) -> list[str]:
 
     kimodo_url = cfg.kimodo_url or os.environ.get("KIMODO_URL", "http://localhost:8420")
     try:
-        r = httpx.get(f"{kimodo_url}/health", timeout=5.0)
+        r = httpx.get(
+            f"{kimodo_url}/health",
+            headers={"ngrok-skip-browser-warning": "true"},
+            timeout=5.0,
+        )
         r.raise_for_status()
         print(f"  kimodo: ok ({kimodo_url})")
     except httpx.HTTPError:
