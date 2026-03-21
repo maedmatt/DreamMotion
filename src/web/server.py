@@ -92,6 +92,7 @@ class SpeakRequest(BaseModel):
     text: str
     target: str = "web"
     voice: str = "alloy"
+    speaker_id: int = 1
 
 
 # ---------------------------------------------------------------------------
@@ -281,7 +282,7 @@ def speak(req: SpeakRequest):
             from g1.audio.client import get_unitree_audio_service
 
             service = get_unitree_audio_service()
-            result = service.say_text(req.text)
+            result = service.say_text(text=req.text, speaker_id=req.speaker_id)
             return {"status": "ok", "detail": result}
         except Exception as exc:
             logger.exception("Robot TTS failed")
