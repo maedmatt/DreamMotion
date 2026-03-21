@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import importlib
 import threading
 import time
@@ -221,7 +222,9 @@ class DetectionState:
             self.error = error
             self.detector_status = "error"
 
-    def publish(self, prompt: str | None, frame_id: int, detections: list[Detection]) -> None:
+    def publish(
+        self, prompt: str | None, frame_id: int, detections: list[Detection]
+    ) -> None:
         with self.lock:
             self.prompt = prompt
             self.frame_id = frame_id
@@ -329,7 +332,9 @@ def _format_pose(detection: Detection) -> str:
     return f"x={x:.2f} y={y:.2f} z={z:.2f}m"
 
 
-def _draw_detection(preview: np.ndarray, detection: Detection, *, show_pose: bool) -> None:
+def _draw_detection(
+    preview: np.ndarray, detection: Detection, *, show_pose: bool
+) -> None:
     x1, y1, x2, y2 = detection.bbox_xyxy
     cx, cy = detection.center_uv
 
@@ -358,7 +363,9 @@ def parse_live_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Live OAK-D + YOLO-World prompt detector."
     )
-    parser.add_argument("--prompt", type=str, default=None, help="Optional initial prompt.")
+    parser.add_argument(
+        "--prompt", type=str, default=None, help="Optional initial prompt."
+    )
     parser.add_argument(
         "--model-id",
         type=str,
@@ -407,7 +414,13 @@ def main() -> None:
     )
     detector_thread = threading.Thread(
         target=_detector_worker,
-        args=(prompt_state, frame_state, detection_state, args.model_id, args.confidence),
+        args=(
+            prompt_state,
+            frame_state,
+            detection_state,
+            args.model_id,
+            args.confidence,
+        ),
         daemon=True,
         name="yolo-detector",
     )
@@ -435,9 +448,10 @@ def main() -> None:
                 if prompt and prompt == det_prompt and det_frame_id == frame_id:
                     for detection in detections:
                         _draw_detection(preview, detection, show_pose=args.show_pose)
+                n = len(detections) if prompt else 0
                 status = (
                     f"Prompt: {prompt if prompt else '<none>'} | "
-                    f"detector: {detector_status} | detections: {len(detections) if prompt else 0}"
+                    f"detector: {detector_status} | detections: {n}"
                 )
 
             cv2.putText(
@@ -478,10 +492,8 @@ def main() -> None:
     finally:
         prompt_state.stop()
         cv2.destroyAllWindows()
-        try:
+        with contextlib.suppress(Exception):
             get_camera().stop()
-        except Exception:
-            pass
 
 
 if __name__ == "__main__":
