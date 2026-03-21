@@ -9,6 +9,7 @@ dependencies = [
     "python-dotenv",
     "sounddevice",
     "pyzmq",
+    "tyro",
 ]
 
 [project.scripts]

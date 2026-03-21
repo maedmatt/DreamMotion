@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import logging
+
 from strands import tool
 
 from g1.audio.client import get_unitree_audio_service
+
+log = logging.getLogger(__name__)
 
 
 @tool
@@ -13,11 +17,19 @@ def say_text(text: str, speaker_id: int = 1) -> dict[str, object]:
 
     Args:
         text: The exact line the robot should speak.
-        speaker_id: Unitree TTS speaker profile. The official examples use `0`
-            for the default voice and `1` for English TTS.
+        speaker_id: Unitree TTS speaker profile (0=default, 1=English).
 
     Returns:
-        Dictionary with the spoken text and Unitree SDK status information.
+        Dictionary with the spoken text and status information.
     """
-    service = get_unitree_audio_service()
-    return service.say_text(text=text, speaker_id=speaker_id)
+    try:
+        service = get_unitree_audio_service()
+        return service.say_text(text=text, speaker_id=speaker_id)
+    except Exception:
+        log.warning("TTS failed", exc_info=True)
+        return {
+            "text": text,
+            "speaker_id": speaker_id,
+            "status": "failed",
+            "error": "Could not reach robot speaker",
+        }

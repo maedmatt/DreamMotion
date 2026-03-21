@@ -9,7 +9,7 @@ import httpx
 from strands import tool
 
 from agent.prompt_refiner import refine_prompt
-from publisher import publish_motion
+from g1.publisher import publish_motion
 
 log = logging.getLogger(__name__)
 
@@ -90,7 +90,21 @@ def generate_motion(description: str, diffusion_steps: int = 50) -> dict:
 
     results = []
     for prompt, duration in zip(prompts, durations, strict=True):
-        qpos_path, pt_path, pt_bytes = _call_kimodo(prompt, duration, diffusion_steps)
+        try:
+            qpos_path, pt_path, pt_bytes = _call_kimodo(
+                prompt, duration, diffusion_steps
+            )
+        except httpx.HTTPError:
+            log.warning("Kimodo call failed for prompt: %s", prompt, exc_info=True)
+            results.append(
+                {
+                    "prompt": prompt,
+                    "duration": duration,
+                    "error": "Kimodo generation failed",
+                }
+            )
+            continue
+
         motion: dict[str, str | float] = {
             "qpos_path": str(qpos_path),
             "prompt": prompt,
