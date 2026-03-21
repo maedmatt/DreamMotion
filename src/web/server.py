@@ -1,9 +1,9 @@
 """Web UI server wrapping the g1-treasure-hunt agent.
 
 Provides a FastAPI web interface with:
-- Text and voice input for motion descriptions
-- LLM text reply generation (always)
-- Kimodo motion generation + 3D preview (always)
+- Text and voice input for agent requests
+- OpenAI speech-to-text from the laptop microphone
+- Agent-driven speech, optional motion generation, and 3D preview
 
 Usage::
 
@@ -33,8 +33,7 @@ from fastapi.staticfiles import StaticFiles
 from openai import OpenAI
 from pydantic import BaseModel
 
-from agent.prompt_refiner import refine_prompt
-from agent.tools.generate_motion import _call_kimodo
+from web.agent_runner import run_agent_for_web
 
 logger = logging.getLogger(__name__)
 
@@ -47,34 +46,14 @@ STATIC_DIR = WEB_DIR / "static"
 TEMPLATES_DIR = WEB_DIR / "templates"
 
 # ---------------------------------------------------------------------------
-# Reply generation prompt
-# ---------------------------------------------------------------------------
-
-REPLY_SYSTEM_PROMPT = """\
-You are a casual, witty companion living inside a humanoid robot.
-
-You receive the user's message. A motion has already been generated in the
-background — you do NOT need to describe it, summarize it, or mention its
-duration. Pretend the motion side of things is handled by someone else.
-
-Your ONLY job is to reply to the user the way a friend would in a chat:
-- Be natural, warm, maybe a little playful or humorous.
-- React to what the user said, not to the motion that was generated.
-- If the user says "throw a basketball", you might say "Let's go! 🏀"
-  or "三分球!稳了" — NOT "I've created a 6-second throwing motion...".
-- Keep it short: 1-2 sentences max.
-- NEVER mention prompts, durations, motion generation, diffusion,
-  Kimodo, CSV, PT files, or any technical details.
-- ALWAYS reply in English, regardless of what language the user writes in.
-"""
-
-# ---------------------------------------------------------------------------
 # Request / response models
 # ---------------------------------------------------------------------------
 
 
 class GenerateRequest(BaseModel):
     prompt: str
+    tts_target: str = "web"
+    speaker_id: int = 1
 
 
 class TranscribeRequest(BaseModel):
@@ -137,56 +116,86 @@ def _ensure_csv_header(csv_text: str) -> str:
     return _CSV_HEADER + "\n" + csv_text
 
 
+def _store_motion_for_viewer(
+    motions: list[dict[str, object]],
+) -> tuple[str | None, str | None]:
+    for motion in motions:
+        qpos_path_raw = motion.get("qpos_path")
+        if not isinstance(qpos_path_raw, str) or not qpos_path_raw:
+            continue
+
+        qpos_path = Path(qpos_path_raw)
+        if not qpos_path.exists():
+            continue
+
+        task_id = str(time.time_ns())
+        csv_content = _ensure_csv_header(qpos_path.read_text())
+        payload: dict[str, str] = {
+            "prompt": str(motion.get("prompt") or qpos_path.name),
+            "csv": csv_content,
+        }
+
+        pt_path_raw = motion.get("pt_path")
+        if isinstance(pt_path_raw, str) and pt_path_raw:
+            payload["pt_path"] = pt_path_raw
+
+        GENERATED_MOTION_DATA[task_id] = payload
+        return task_id, f"/viewer/{task_id}"
+
+    return None, None
+
+
 @app.post("/api/generate")
 def api_generate(req: GenerateRequest):
-    """Generate motion + text reply for a user prompt.
+    """Run the agent on a text prompt and expose any generated motion to the UI."""
+    prompt = req.prompt.strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Empty prompt")
+    if req.tts_target not in {"web", "robot"}:
+        raise HTTPException(status_code=400, detail="Unsupported speech target")
 
-    Always produces both outputs regardless of what the user says.
-    """
     diffusion_steps: int = app.state.diffusion_steps  # pyright: ignore[reportAttributeAccessIssue]
 
-    # 1. Refine prompt → Kimodo prompts
-    refined = refine_prompt(req.prompt)
-    prompts: list[str] = refined.get("prompts") or [req.prompt]
-    durations: list[float] = refined.get("durations") or [5.0] * len(prompts)
-    warning: str | None = refined.get("warning")
-
-    if len(durations) < len(prompts):
-        durations.extend([5.0] * (len(prompts) - len(durations)))
-
-    # 2. Generate motion (first prompt for the viewer)
-    prompt_text = prompts[0]
-    duration = durations[0]
-
     try:
-        qpos_path, pt_path = _call_kimodo(prompt_text, duration, diffusion_steps)
-    except httpx.HTTPError as exc:
-        logger.exception("Kimodo generation failed")
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        agent_result = run_agent_for_web(
+            prompt,
+            tts_target=req.tts_target,
+            speaker_id=req.speaker_id,
+            diffusion_steps=diffusion_steps,
+        )
+    except Exception as exc:
+        logger.exception("Agent invocation failed")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Agent invocation failed: {exc}",
+        ) from exc
 
-    # 3. Store results for viewer
-    task_id = str(int(time.time() * 1000))
-    csv_content = _ensure_csv_header(
-        qpos_path.read_text() if qpos_path.exists() else ""
-    )
+    prompts = [
+        motion["prompt"]
+        for motion in agent_result.motions
+        if isinstance(motion.get("prompt"), str)
+    ]
+    durations = [
+        float(motion["duration"])
+        for motion in agent_result.motions
+        if isinstance(motion.get("duration"), int | float)
+    ]
 
-    motion_data: dict[str, str] = {"prompt": prompt_text, "csv": csv_content}
-    if pt_path:
-        motion_data["pt_path"] = str(pt_path)
-    GENERATED_MOTION_DATA[task_id] = motion_data
+    task_id, viewer_url = _store_motion_for_viewer(agent_result.motions)
 
-    # 4. Generate text reply via LLM
-    text_reply = _generate_reply(req.prompt, prompts, durations, warning)
-
-    result: dict = {
-        "text_reply": text_reply,
+    result: dict[str, object] = {
+        "text_reply": agent_result.reply_text,
+        "spoken_text": agent_result.spoken_text,
+        "speech": agent_result.speech,
+        "motions": agent_result.motions,
         "prompts": prompts,
         "durations": durations,
-        "task_id": task_id,
-        "viewer_url": f"/viewer/{task_id}",
     }
-    if warning:
-        result["warning"] = warning
+    if task_id and viewer_url:
+        result["task_id"] = task_id
+        result["viewer_url"] = viewer_url
+    if agent_result.warning:
+        result["warning"] = agent_result.warning
     return result
 
 
@@ -290,44 +299,6 @@ def speak(req: SpeakRequest):
             ) from exc
 
     raise HTTPException(status_code=400, detail=f"Unknown target: {req.target}")
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _generate_reply(
-    user_prompt: str,
-    prompts: list[str],
-    durations: list[float],
-    warning: str | None,
-) -> str:
-    """Call the LLM to produce a conversational reply about the generated motion."""
-    try:
-        client = OpenAI()
-        motion_summary = json.dumps(
-            [
-                {"prompt": p, "duration": d}
-                for p, d in zip(prompts, durations, strict=True)
-            ]
-        )
-        user_msg = f"User message: {user_prompt}\n\nGenerated motions: {motion_summary}"
-        if warning:
-            user_msg += f"\nWarning: {warning}"
-
-        resp = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[
-                {"role": "system", "content": REPLY_SYSTEM_PROMPT},
-                {"role": "user", "content": user_msg},
-            ],
-        )
-        return (resp.choices[0].message.content or "").strip()
-    except Exception:
-        logger.exception("Reply generation failed, using fallback")
-        total = sum(durations)
-        return f"Generated {len(prompts)} motion(s): {prompts[0]} ({total:.1f}s total)"
 
 
 # ---------------------------------------------------------------------------

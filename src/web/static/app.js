@@ -17,7 +17,7 @@ let isPresentationMode = false;
 let hasRequestedDeviceLabels = false;
 let ttsTarget = 'web';
 let ttsVoice = 'alloy';
-let autoSpeak = false;
+let autoSpeak = true;
 let currentAudio = null;
 let isSpeaking = false;
 
@@ -463,7 +463,12 @@ document.addEventListener('DOMContentLoaded', () => {
     micBtn.disabled = false;
     setMicState('idle', 'Use microphone');
     if (liveTranscriptText.trim()) {
-      showStatusMessage('Live speech recognized. You can edit and press enter.');
+      showStatusMessage('Live speech recognized. Sending to agent...');
+      if (typeof form.requestSubmit === 'function') {
+        form.requestSubmit();
+      } else {
+        form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+      }
     } else {
       showStatusMessage('No speech recognized.');
     }
@@ -612,7 +617,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    liveTranscriptText = input.value.trim();
+    liveTranscriptText = '';
     const sessionId = recordingSessionId;
     mediaRecorder.ondataavailable = (event) => {
       if (event.data && event.data.size > 0) {
@@ -717,7 +722,7 @@ document.addEventListener('DOMContentLoaded', () => {
     hideAgentReply();
     if (!isPresentationMode) {
       statusMsg.classList.remove('hidden');
-      refinedText.textContent = "Generating motion...";
+      refinedText.textContent = 'Talking to agent...';
       spinner.classList.remove('hidden');
     } else {
       spinner.classList.add('hidden');
@@ -742,10 +747,19 @@ document.addEventListener('DOMContentLoaded', () => {
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt })
+        body: JSON.stringify({ prompt, tts_target: ttsTarget })
       });
 
-      if (!response.ok) throw new Error('API Error');
+      if (!response.ok) {
+        let detail = 'API Error';
+        try {
+          const payload = await response.json();
+          if (payload && payload.detail) detail = payload.detail;
+        } catch (err) {
+          // Keep default detail.
+        }
+        throw new Error(detail);
+      }
       const data = await response.json();
 
       spinner.classList.add('hidden');
@@ -753,23 +767,24 @@ document.addEventListener('DOMContentLoaded', () => {
         if (data.prompts && data.prompts.length > 0) {
           refinedText.textContent = data.prompts[0];
         } else {
-          refinedText.textContent = prompt;
+          refinedText.textContent = 'Agent chose speech only for this request.';
         }
-      } else {
+      } else if (data.viewer_url || (data.prompts && data.prompts.length > 0)) {
         narrateKimodo();
       }
 
-      // Show agent text reply
-      if (data.text_reply) {
-        showAgentReply(data.text_reply);
-        if (autoSpeak) {
-          void speakText(data.text_reply);
+      const replyText = (data.text_reply || data.spoken_text || '').trim();
+      if (replyText) {
+        showAgentReply(replyText);
+        const shouldAutoSpeak = autoSpeak && (!data.speech || data.speech.target === 'web');
+        if (shouldAutoSpeak) {
+          void speakText(data.spoken_text || replyText);
         }
       }
 
-      currentTaskId = data.task_id;
+      currentTaskId = data.task_id || null;
 
-      if (data.viewer_url) {
+      if (data.viewer_url && data.task_id) {
         if (!isPresentationMode) {
           ensureViewerFrame(data.task_id);
         }
@@ -779,7 +794,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (err) {
       spinner.classList.add('hidden');
       if (!isPresentationMode) {
-        refinedText.textContent = "Error generating motion.";
+        refinedText.textContent = (err && err.message) ? err.message : 'Error running agent.';
       }
       console.error(err);
     } finally {
@@ -856,7 +871,7 @@ document.addEventListener('DOMContentLoaded', () => {
   selectedMicDeviceId = readStorage(MIC_DEVICE_STORAGE_KEY, '');
   ttsTarget = readStorage(TTS_TARGET_STORAGE_KEY, 'web');
   ttsVoice = readStorage(TTS_VOICE_STORAGE_KEY, 'alloy');
-  autoSpeak = readStorage(AUTO_SPEAK_STORAGE_KEY, 'false') === 'true';
+  autoSpeak = readStorage(AUTO_SPEAK_STORAGE_KEY, 'true') === 'true';
   ttsTargetSelect.value = ttsTarget;
   ttsVoiceSelect.value = ttsVoice;
   autoSpeakToggle.checked = autoSpeak;

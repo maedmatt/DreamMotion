@@ -64,7 +64,7 @@ def _call_kimodo(
     timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
     url = _kimodo_url()
 
-    # CSV endpoint → human-readable qpos record
+    # CSV endpoint -> human-readable qpos record
     csv_response = httpx.post(
         f"{url}/generate/csv",
         headers=KIMODO_HEADERS,
@@ -75,7 +75,7 @@ def _call_kimodo(
     csv_path = OUTPUT_DIR / f"qpos_{timestamp}.csv"
     csv_path.write_bytes(csv_response.content)
 
-    # PT endpoint → MotionLib tensor for deploy pipeline (best-effort)
+    # PT endpoint -> MotionLib tensor for deploy pipeline (best-effort)
     pt_path = None
     try:
         pt_response = httpx.post(
@@ -112,6 +112,11 @@ def generate_motion(description: str, diffusion_steps: int = 50) -> dict:
         Dictionary with a list of generated motions (qpos_path, prompt, duration,
         num_frames), plus an optional warning if unsupported behavior was approximated.
     """
+    return generate_motion_impl(description, diffusion_steps=diffusion_steps)
+
+
+def generate_motion_impl(description: str, diffusion_steps: int = 50) -> dict:
+    """Shared implementation for motion generation across CLI and web agent flows."""
     refined = refine_prompt(description)
     prompts = refined["prompts"]
     durations = refined["durations"]

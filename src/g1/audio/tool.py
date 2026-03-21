@@ -9,6 +9,21 @@ from g1.audio.client import get_unitree_audio_service
 log = logging.getLogger(__name__)
 
 
+def say_text_impl(text: str, speaker_id: int = 1) -> dict[str, object]:
+    """Shared implementation for robot speech across CLI and web agent flows."""
+    try:
+        service = get_unitree_audio_service()
+        return service.say_text(text=text, speaker_id=speaker_id)
+    except Exception:
+        log.warning("TTS failed — robot may be disconnected")
+        return {
+            "text": text,
+            "speaker_id": speaker_id,
+            "status": "failed",
+            "error": "Could not reach robot speaker",
+        }
+
+
 @tool
 def say_text(text: str, speaker_id: int = 1) -> dict[str, object]:
     """Make the Unitree G1 speak text through its onboard speaker.
@@ -22,14 +37,4 @@ def say_text(text: str, speaker_id: int = 1) -> dict[str, object]:
     Returns:
         Dictionary with the spoken text and status information.
     """
-    try:
-        service = get_unitree_audio_service()
-        return service.say_text(text=text, speaker_id=speaker_id)
-    except Exception:
-        log.warning("TTS failed — robot may be disconnected")
-        return {
-            "text": text,
-            "speaker_id": speaker_id,
-            "status": "failed",
-            "error": "Could not reach robot speaker",
-        }
+    return say_text_impl(text=text, speaker_id=speaker_id)
