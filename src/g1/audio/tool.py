@@ -26,7 +26,7 @@ def say_text(text: str, speaker_id: int = 1) -> dict[str, object]:
         service = get_unitree_audio_service()
         return service.say_text(text=text, speaker_id=speaker_id)
     except Exception:
-        log.warning("TTS failed", exc_info=True)
+        log.warning("TTS failed — robot may be disconnected")
         return {
             "text": text,
             "speaker_id": speaker_id,

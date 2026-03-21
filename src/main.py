@@ -63,16 +63,17 @@ def preflight(cfg: Config) -> list[str]:
                 "(use --no-tts to skip)"
             )
         else:
-            try:
-                import importlib
+            import socket
 
-                ch = importlib.import_module("unitree_sdk2py.core.channel")
-                ch.ChannelFactoryInitialize(0, iface)
-                print(f"  tts: ok (interface={iface})")
-            except Exception:
+            available = [name for _, name in socket.if_nameindex()]
+            if iface not in available:
                 errors.append(
-                    f"CycloneDDS cannot use interface '{iface}' (use --no-tts to skip)"
+                    f"Interface '{iface}' not found. "
+                    f"Available: {', '.join(available)} "
+                    "(use --no-tts to skip)"
                 )
+            else:
+                print(f"  tts: ok (interface={iface})")
 
     if cfg.zmq:
         print(f"  zmq: ok ({os.environ.get('ZMQ_PUB_ADDRESS', 'tcp://*:5555')})")
