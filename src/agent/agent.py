@@ -54,5 +54,5 @@ def create_agent(*, tts: bool = False) -> Agent:
         tools.append(say_text)
         prompt = SYSTEM_PROMPT_TTS
 
-    model = OpenAIModel(model_id="gpt-4o")
+    model = OpenAIModel(model_id="gpt-4.1")
     return Agent(model=model, system_prompt=prompt, tools=tools)
