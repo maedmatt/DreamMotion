@@ -9,7 +9,6 @@ import httpx
 from strands import tool
 
 from agent.prompt_refiner import refine_prompt
-from g1.publisher import publish_motion
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +42,7 @@ def _call_kimodo(
     num_samples: int = 1,
     num_transition_frames: int = 5,
     constraints: list[dict] | None = None,
-) -> tuple[Path, Path | None, bytes | None]:
+) -> tuple[Path, Path | None]:
     """Call Kimodo API and save results as CSV and .pt."""
     body: dict = {
         "prompt": prompt,
@@ -76,9 +75,8 @@ def _call_kimodo(
     csv_path = OUTPUT_DIR / f"qpos_{timestamp}.csv"
     csv_path.write_bytes(csv_response.content)
 
-    # PT endpoint → MotionLib tensor for sim and ZMQ (best-effort)
+    # PT endpoint → MotionLib tensor for deploy pipeline (best-effort)
     pt_path = None
-    pt_bytes = None
     try:
         pt_response = httpx.post(
             f"{url}/generate/pt",
@@ -87,13 +85,12 @@ def _call_kimodo(
             timeout=120.0,
         )
         pt_response.raise_for_status()
-        pt_bytes = pt_response.content
         pt_path = OUTPUT_DIR / f"qpos_{timestamp}.pt"
-        pt_path.write_bytes(pt_bytes)
+        pt_path.write_bytes(pt_response.content)
     except httpx.HTTPError:
         log.warning("Failed to fetch .pt from Kimodo, skipping")
 
-    return csv_path, pt_path, pt_bytes
+    return csv_path, pt_path
 
 
 @tool
@@ -123,7 +120,7 @@ def generate_motion(description: str, diffusion_steps: int = 50) -> dict:
     results = []
     for prompt, duration in zip(prompts, durations, strict=True):
         try:
-            qpos_path, pt_path, pt_bytes = _call_kimodo(
+            qpos_path, pt_path = _call_kimodo(
                 prompt,
                 duration,
                 diffusion_steps,
@@ -148,11 +145,6 @@ def generate_motion(description: str, diffusion_steps: int = 50) -> dict:
         }
         if pt_path:
             motion["pt_path"] = str(pt_path)
-        if pt_bytes:
-            publish_motion(
-                metadata={"prompt": prompt, "duration": duration},
-                pt_bytes=pt_bytes,
-            )
         results.append(motion)
 
     output: dict = {"motions": results}

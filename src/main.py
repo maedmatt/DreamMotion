@@ -27,9 +27,6 @@ class Config:
     tts: bool = True
     """Enable text-to-speech on the robot."""
 
-    zmq: bool = True
-    """Enable ZMQ motion publishing."""
-
     kimodo_url: str = ""
     """Kimodo server URL. Overrides KIMODO_URL env var if set."""
 
@@ -78,9 +75,6 @@ def preflight(cfg: Config) -> list[str]:
                 )
             else:
                 print(f"  tts: ok (interface={iface})")
-
-    if cfg.zmq:
-        print(f"  zmq: ok ({os.environ.get('ZMQ_PUB_ADDRESS', 'tcp://*:5555')})")
 
     if cfg.mode == InputMode.mic:
         try:
@@ -141,24 +135,13 @@ def main() -> None:
             print(f"  ERROR: {e}")
         sys.exit(1)
 
-    if cfg.zmq:
-        from g1.publisher import init_publisher
-
-        init_publisher()
-
     agent = create_agent(tts=cfg.tts)
-    print(f"\nG1 agent ready. mode={cfg.mode} tts={cfg.tts} zmq={cfg.zmq}")
+    print(f"\nG1 agent ready. mode={cfg.mode} tts={cfg.tts}")
 
-    try:
-        if cfg.mode == InputMode.mic:
-            run_mic_loop(agent)
-        else:
-            run_text_loop(agent)
-    finally:
-        if cfg.zmq:
-            from g1.publisher import close_publisher
-
-            close_publisher()
+    if cfg.mode == InputMode.mic:
+        run_mic_loop(agent)
+    else:
+        run_text_loop(agent)
 
 
 if __name__ == "__main__":
