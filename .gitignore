@@ -5,3 +5,4 @@ __pycache__/
 *.egg-info/
 .env
 output/
+src/g1/vision/img/
