@@ -50,6 +50,12 @@ def preflight(cfg: Config) -> list[str]:
         errors.append(f"Kimodo unreachable at {kimodo_url}")
 
     if cfg.tts:
+        try:
+            import unitree_sdk2py  # noqa: F401  # pyright: ignore[reportMissingImports]
+        except ImportError:
+            errors.append(
+                "TTS enabled but unitree_sdk2py not installed (use --no-tts to skip)"
+            )
         iface = os.environ.get("UNITREE_NETWORK_INTERFACE")
         if not iface:
             errors.append(
@@ -57,7 +63,16 @@ def preflight(cfg: Config) -> list[str]:
                 "(use --no-tts to skip)"
             )
         else:
-            print(f"  tts: ok (interface={iface})")
+            try:
+                import importlib
+
+                ch = importlib.import_module("unitree_sdk2py.core.channel")
+                ch.ChannelFactoryInitialize(0, iface)
+                print(f"  tts: ok (interface={iface})")
+            except Exception:
+                errors.append(
+                    f"CycloneDDS cannot use interface '{iface}' (use --no-tts to skip)"
+                )
 
     if cfg.zmq:
         print(f"  zmq: ok ({os.environ.get('ZMQ_PUB_ADDRESS', 'tcp://*:5555')})")
