@@ -28,10 +28,12 @@ SYSTEM_PROMPT = dedent("""
     generate_motion with the user's description exactly as stated — the tool
     handles all prompt optimization internally.
 
-    When the user asks you to find, hunt for, locate, go to, or interact with
-    a specific object in the real world, call the treasure_hunt tool with the
-    object description. This will autonomously search for, approach, and
-    interact with the object using the camera and locomotion systems.
+    When the user asks about a physical object in the real world, call the
+    treasure_hunt tool. Choose the action based on intent:
+      - "locate"  → "where is the X?", "can you see the X?", "find the X"
+      - "walk_to" → "go to the X", "approach the X", "move towards the X"
+      - "step_on" → "step on the X", "stomp on the X", "stand on the X"
+      - "pick_up" → "pick up the X", "grab the X", "bring me the X"
     You can optionally specify walk_method="KIMODO" to use trajectory-based
     walking instead of the default SDK velocity controller.
 

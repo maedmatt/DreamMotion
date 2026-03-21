@@ -130,11 +130,17 @@ def run_move_only() -> None:
         _fail("move", "walk timed out")
 
 
-def run_full_pipeline() -> None:
-    """Run the complete LOOK → MOVE → LOOK_AGAIN → ACT pipeline."""
+def run_full_pipeline(action: str = "step_on") -> None:
+    """Run the pipeline with the given action.
+
+    action:
+      locate   — LOOK only, report position, no movement
+      walk_to  — LOOK + MOVE, stop near object
+      step_on  — LOOK + MOVE + LOOK_AGAIN + ACT (foot, needs Kimodo)
+      pick_up  — LOOK + MOVE + LOOK_AGAIN + ACT (hand, needs Kimodo)
+    """
     from g1.locomotion.sdk_controller import get_sdk_controller
     from g1.state_machine.machine import TreasureHuntStateMachine
-    from g1.transforms.odometry import get_odometry
     from g1.transforms.service import get_transform_service
     from g1.vision.camera import get_camera
     from g1.vision.detector import get_detector
@@ -142,13 +148,20 @@ def run_full_pipeline() -> None:
     target = input("  Object to find [box]: ").strip() or "box"
     walk_method = input("  Walk method [SDK/kimodo]: ").strip().upper() or "SDK"
 
-    print(f"\n  Initializing subsystems...")
+    needs_kimodo = action in ("step_on", "pick_up")
+    if needs_kimodo:
+        print(
+            f"\n  Action '{action}' will call Kimodo for the ACT step.\n"
+            "  If Kimodo is unavailable the pipeline will error at ACT.\n"
+            "  Use --action walk_to to test movement only without Kimodo."
+        )
+
+    print("\n  Initializing subsystems...")
     time.sleep(2.0)
 
     camera = get_camera()
     detector = get_detector()
     transforms = get_transform_service()
-    odometry = get_odometry()
     sdk = get_sdk_controller()
 
     spoken: list[str] = []
@@ -162,36 +175,36 @@ def run_full_pipeline() -> None:
         camera=camera,
         detector=detector,
         transforms=transforms,
-        odometry=odometry,
+        odometry=None,
         sdk_controller=sdk,
         say=say,
         walk_method=walk_method,  # type: ignore[arg-type]
+        action=action,  # type: ignore[arg-type]
     )
 
-    print(f"\n  Starting pipeline: target='{target}', walk_method={walk_method}")
-    print("  >>> Ensure box is visible and 2–3m ahead — press Enter to start <<<")
+    print(f"\n  action='{action}'  target='{target}'  walk_method={walk_method}")
+    print("  >>> Ensure object is visible and 2–3m ahead — press Enter to start <<<")
     input()
 
     result = machine.run()
 
     print("\n  === Pipeline result ===")
-    print(f"  Final state:       {result['final_state']}")
-    print(f"  Target world XYZ:  {result.get('target_world_xyz')}")
-    print(f"  Target local XYZ:  {result.get('target_local_xyz')}")
+    print(f"  Final state:      {result['final_state']}")
+    print(f"  Target base XYZ:  {result.get('target_local_xyz')}")
 
     if "look_detection" in result:
         d = result["look_detection"]
-        print(f"  LOOK detection:    conf={d['confidence']:.2f}  world={d['world_xyz']}")
+        print(f"  LOOK:             conf={d['confidence']:.2f}  base={d['base_xyz']}")
     if "look_again_detection" in result:
         d = result["look_again_detection"]
-        print(f"  LOOK_AGAIN:        conf={d['confidence']:.2f}  local={d['local_xyz']}")
+        print(f"  LOOK_AGAIN:       conf={d['confidence']:.2f}  local={d['local_xyz']}")
     if "act_kimodo_result" in result:
         qpos = result["act_kimodo_result"].get("qpos", [])
-        print(f"  Kimodo trajectory: {len(qpos)} frames")
+        print(f"  Kimodo traj:      {len(qpos)} frames")
         print("  >>> Pass qpos to your RL policy for execution <<<")
 
     if result["final_state"] == "DONE":
-        _pass("Full LMLA pipeline completed successfully")
+        _pass(f"Pipeline '{action}' completed successfully")
     else:
         _fail("full_pipeline", f"ended in state {result['final_state']}")
 
@@ -206,14 +219,25 @@ if __name__ == "__main__":
         "--state",
         choices=["look", "move", "full"],
         default="full",
-        help="Which part of the pipeline to run (default: full)",
+        help="Low-level state to run in isolation (default: full)",
+    )
+    parser.add_argument(
+        "--action",
+        choices=["locate", "walk_to", "step_on", "pick_up"],
+        default=None,
+        help=(
+            "Action to run via the state machine. Overrides --state when set. "
+            "locate/walk_to need no Kimodo; step_on/pick_up require Kimodo tunnel."
+        ),
     )
     args = parser.parse_args()
 
     print("=== hardware/test_e2e.py ===")
-    print("Prerequisites: robot on, OAK-D mounted, Kimodo tunnel active\n")
+    print("Prerequisites: robot on, OAK-D mounted\n")
 
-    if args.state == "look":
+    if args.action is not None:
+        run_full_pipeline(action=args.action)
+    elif args.state == "look":
         run_look_only()
     elif args.state == "move":
         run_move_only()

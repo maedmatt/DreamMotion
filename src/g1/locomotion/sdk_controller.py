@@ -95,6 +95,41 @@ class SdkLocomotionController:
         self.stop()
         return False
 
+    def walk_forward_distance(
+        self,
+        distance_m: float,
+        yaw_rad: float = 0.0,
+        speed: float = 0.25,
+        yaw_speed: float = 0.3,
+    ) -> None:
+        """Open-loop walk: turn to face yaw_rad, then walk distance_m forward.
+
+        No odometry required — uses elapsed time and fixed speeds.
+        Suitable when position feedback is unavailable (e.g. Unitree G1).
+
+        Args:
+            distance_m: How far to walk (meters).
+            yaw_rad: Heading offset to correct before walking (radians).
+                Positive = left, negative = right (robot base_link convention).
+            speed: Forward speed (m/s).
+            yaw_speed: Rotation speed (rad/s).
+        """
+        # 1. Turn to face the target
+        if abs(yaw_rad) > 0.05:
+            turn_dir = 1.0 if yaw_rad > 0 else -1.0
+            turn_duration = abs(yaw_rad) / yaw_speed
+            self._client.Move(0.0, 0.0, turn_dir * yaw_speed)
+            time.sleep(turn_duration)
+            self.stop()
+            time.sleep(0.3)  # settle
+
+        # 2. Walk straight
+        if distance_m > 0.05:
+            walk_duration = distance_m / speed
+            self._client.Move(speed, 0.0, 0.0)
+            time.sleep(walk_duration)
+            self.stop()
+
     def step_backward(self, distance_m: float) -> None:
         """Move backward by approximately *distance_m* meters."""
         duration = distance_m / 0.15  # ~0.15 m/s backward
