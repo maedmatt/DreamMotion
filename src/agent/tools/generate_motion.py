@@ -14,17 +14,6 @@ log = logging.getLogger(__name__)
 
 OUTPUT_DIR = Path("output")
 
-# fmt: off
-# Default standing joint angles (29 DOFs) — shared with AgentTrackerPolicy
-DEFAULT_DOF_POS = [
-    -0.312,  0.0,    0.0,   0.669, -0.363,  0.0,    # left leg
-    -0.312,  0.0,    0.0,   0.669, -0.363,  0.0,    # right leg
-     0.0,    0.0,    0.0,                            # waist
-     0.2,    0.2,    0.0,   0.6,   0.0, 0.0, 0.0,   # left arm
-     0.2,   -0.2,    0.0,   0.6,   0.0, 0.0, 0.0,   # right arm
-]
-# fmt: on
-
 
 def _kimodo_url() -> str:
     return os.environ.get("KIMODO_URL", "http://localhost:8420")
@@ -129,8 +118,6 @@ def generate_motion_impl(description: str, diffusion_steps: int = 50) -> dict:
                 prompt,
                 duration,
                 diffusion_steps,
-                # initial_dof_pos=DEFAULT_DOF_POS,
-                # final_dof_pos=DEFAULT_DOF_POS,
             )
         except httpx.HTTPError:
             log.warning("Kimodo call failed for prompt: %s", prompt, exc_info=True)
