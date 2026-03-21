@@ -10,6 +10,7 @@ class SpeechInputConfig:
     channels: int
     microphone_device: str | int | None
     transcribe_model: str
+    transcribe_language: str = "en"
 
 
 def _parse_int_env(name: str, default: int) -> int:
@@ -38,4 +39,5 @@ def load_speech_input_config() -> SpeechInputConfig:
             "VOICE_INPUT_TRANSCRIBE_MODEL",
             "gpt-4o-mini-transcribe",
         ),
+        transcribe_language="en",
     )

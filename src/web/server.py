@@ -378,6 +378,7 @@ def main() -> None:
         channels=1,
         microphone_device=None,
         transcribe_model=transcribe_model,
+        transcribe_language="en",
     )
     app.state.transcriber = OpenAISpeechTranscriber(speech_cfg)
     app.state.kimodo_url = kimodo_url

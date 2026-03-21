@@ -31,6 +31,7 @@ class OpenAISpeechTranscriber:
             transcription = self._client.audio.transcriptions.create(  # pyright: ignore[reportAttributeAccessIssue]
                 model=self._config.transcribe_model,
                 file=audio_file,
+                language=self._config.transcribe_language,
                 response_format="text",
             )
 
