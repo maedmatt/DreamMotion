@@ -1,0 +1,39 @@
+{
+  "image_dir": "/home/slahlou/g1-treasure-hunt/src/g1/vision/img",
+  "num_images_used": 31,
+  "pattern": {
+    "cols": 9,
+    "rows": 6,
+    "square_size": 0.02
+  },
+  "image_size": {
+    "width": 1920,
+    "height": 1080
+  },
+  "rms_reprojection_error": 0.2743592632557587,
+  "mean_reprojection_error": 0.2743595666976851,
+  "camera_matrix": [
+    [
+      1578.3317783997006,
+      0.0,
+      951.4478536783012
+    ],
+    [
+      0.0,
+      1576.5596656252237,
+      519.4330883879869
+    ],
+    [
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "distortion_coefficients": [
+    0.11393229665744987,
+    -0.834156752100952,
+    -0.003424516884168525,
+    0.0009570446431753049,
+    2.6829916481287843
+  ]
+}

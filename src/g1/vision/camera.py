@@ -35,46 +35,53 @@ class OakCamera:
     def __init__(self) -> None:
         dai = importlib.import_module("depthai")
         self._dai = dai
+        self._pipeline = None
+        self._device = None
 
-        pipeline = dai.Pipeline()
+        if hasattr(dai.Pipeline, "createColorCamera"):
+            self._init_legacy_pipeline()
+        else:
+            self._init_modern_pipeline()
 
-        # Color camera
-        cam_rgb = pipeline.createColorCamera()
+        atexit.register(self.stop)
+
+    def _build_camera_nodes(self, pipeline):
+        dai = self._dai
+        if hasattr(dai.Pipeline, "createColorCamera"):
+            cam_rgb = pipeline.createColorCamera()
+            mono_left = pipeline.createMonoCamera()
+            mono_right = pipeline.createMonoCamera()
+            stereo = pipeline.createStereoDepth()
+        else:
+            cam_rgb = pipeline.create(dai.node.ColorCamera)
+            mono_left = pipeline.create(dai.node.MonoCamera)
+            mono_right = pipeline.create(dai.node.MonoCamera)
+            stereo = pipeline.create(dai.node.StereoDepth)
+
         cam_rgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
         cam_rgb.setInterleaved(False)
         cam_rgb.setColorOrder(dai.ColorCameraProperties.ColorOrder.BGR)
         cam_rgb.setBoardSocket(dai.CameraBoardSocket.CAM_A)
 
-        # Stereo depth
-        mono_left = pipeline.createMonoCamera()
-        mono_right = pipeline.createMonoCamera()
         mono_left.setBoardSocket(dai.CameraBoardSocket.CAM_B)
         mono_right.setBoardSocket(dai.CameraBoardSocket.CAM_C)
         mono_left.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
         mono_right.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
 
-        stereo = pipeline.createStereoDepth()
-        stereo.setDefaultProfilePreset(dai.node.StereoDepth.PresetMode.HIGH_DENSITY)
-        stereo.setDepthAlign(dai.CameraBoardSocket.CAM_A)  # Align depth to RGB
+        preset_mode = dai.node.StereoDepth.PresetMode
+        for preset_name in ("HIGH_DENSITY", "DENSITY", "FAST_DENSITY", "DEFAULT"):
+            preset = getattr(preset_mode, preset_name, None)
+            if preset is not None:
+                stereo.setDefaultProfilePreset(preset)
+                break
+        stereo.setDepthAlign(dai.CameraBoardSocket.CAM_A)
         stereo.setOutputSize(cam_rgb.getIspWidth(), cam_rgb.getIspHeight())
         mono_left.out.link(stereo.left)
         mono_right.out.link(stereo.right)
+        return cam_rgb, stereo
 
-        # XLink outputs
-        xout_rgb = pipeline.createXLinkOut()
-        xout_rgb.setStreamName("rgb")
-        cam_rgb.isp.link(xout_rgb.input)
-
-        xout_depth = pipeline.createXLinkOut()
-        xout_depth.setStreamName("depth")
-        stereo.depth.link(xout_depth.input)
-
-        # Start the device
-        self._device = dai.Device(pipeline)
-        self._q_rgb = self._device.getOutputQueue("rgb", maxSize=4, blocking=False)
-        self._q_depth = self._device.getOutputQueue("depth", maxSize=4, blocking=False)
-
-        # Cache intrinsics from the RGB camera
+    def _cache_intrinsics(self, cam_rgb) -> None:
+        dai = self._dai
         calib = self._device.readCalibration()
         intrinsics_matrix = calib.getCameraIntrinsics(
             dai.CameraBoardSocket.CAM_A,
@@ -90,7 +97,36 @@ class OakCamera:
             height=cam_rgb.getIspHeight(),
         )
 
-        atexit.register(self.stop)
+    def _init_legacy_pipeline(self) -> None:
+        dai = self._dai
+        pipeline = dai.Pipeline()
+        cam_rgb, stereo = self._build_camera_nodes(pipeline)
+
+        xout_rgb = pipeline.createXLinkOut()
+        xout_rgb.setStreamName("rgb")
+        cam_rgb.isp.link(xout_rgb.input)
+
+        xout_depth = pipeline.createXLinkOut()
+        xout_depth.setStreamName("depth")
+        stereo.depth.link(xout_depth.input)
+
+        self._device = dai.Device(pipeline)
+        self._q_rgb = self._device.getOutputQueue("rgb", maxSize=4, blocking=False)
+        self._q_depth = self._device.getOutputQueue("depth", maxSize=4, blocking=False)
+        self._cache_intrinsics(cam_rgb)
+
+    def _init_modern_pipeline(self) -> None:
+        dai = self._dai
+        pipeline = dai.Pipeline(dai.Device())
+        cam_rgb, stereo = self._build_camera_nodes(pipeline)
+
+        self._q_rgb = cam_rgb.isp.createOutputQueue(maxSize=4, blocking=False)
+        self._q_depth = stereo.depth.createOutputQueue(maxSize=4, blocking=False)
+        pipeline.start()
+
+        self._pipeline = pipeline
+        self._device = pipeline.getDefaultDevice()
+        self._cache_intrinsics(cam_rgb)
 
     @property
     def intrinsics(self) -> Intrinsics:
@@ -106,7 +142,6 @@ class OakCamera:
         depth_packet = self._q_depth.get()
 
         color = rgb_packet.getCvFrame()
-        # OAK-D depth is in millimeters (uint16), convert to meters
         depth_raw = depth_packet.getFrame()
         depth_m = depth_raw.astype(np.float32) / 1000.0
 
@@ -140,9 +175,13 @@ class OakCamera:
 
     def stop(self) -> None:
         """Stop the camera pipeline. Idempotent."""
-        if hasattr(self, "_device") and self._device is not None:
+        if getattr(self, "_pipeline", None) is not None:
+            self._pipeline.stop()
+            self._pipeline = None
+
+        if getattr(self, "_device", None) is not None:
             self._device.close()
-            self._device = None  # type: ignore[assignment]
+            self._device = None
 
 
 @lru_cache(maxsize=1)
