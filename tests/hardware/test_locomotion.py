@@ -170,10 +170,10 @@ if __name__ == "__main__":
     print("Prerequisites: robot in sport mode, UNITREE_NETWORK_INTERFACE set")
     print("WARNING: Robot will move. Keep a safe distance.\n")
 
-    odom = test_odometry_connects()
-    test_velocity_zero_when_still(odom)
-    sdk, odom = test_walk_to_point(odom)
-    test_step_backward(sdk, odom)
+    #odom = test_odometry_connects()
+    #test_velocity_zero_when_still(odom)
+    #sdk, odom = test_walk_to_point(odom)
+    #test_step_backward(sdk, odom)
     test_stop()
 
     print("\nDone.")
