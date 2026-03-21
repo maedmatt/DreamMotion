@@ -1,9 +1,29 @@
 {
-  "_comment": "4x4 rigid transform: camera_link -> base_link. Paste the matrix from the OpenCV checkerboard calibration here. Rows are [r00 r01 r02 tx / r10 r11 r12 ty / r20 r21 r22 tz / 0 0 0 1].",
+  "_comment": "generated from physical measurements: x=0.10 z=1.20 pitch=-23deg",
   "camera_to_base": [
-    [1.0, 0.0, 0.0, 0.0],
-    [0.0, 1.0, 0.0, 0.0],
-    [0.0, 0.0, 1.0, 0.0],
-    [0.0, 0.0, 0.0, 1.0]
+    [
+      0.0,
+      0.3903392084399883,
+      0.9206711151950209,
+      0.1
+    ],
+    [
+      -1.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      -0.9206711151950209,
+      0.3903392084399883,
+      1.2
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
   ]
 }

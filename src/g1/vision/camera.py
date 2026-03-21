@@ -137,8 +137,21 @@ class OakCamera:
         self._cache_intrinsics(cam_rgb)
 
     def _init_modern_pipeline(self) -> None:
+        import time
+
         dai = self._dai
-        pipeline = dai.Pipeline(dai.Device())
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            try:
+                device = dai.Device()
+                break
+            except RuntimeError as exc:
+                last_exc = exc
+                time.sleep(2.0)
+        else:
+            raise RuntimeError(f"OAK-D failed to open after 3 attempts: {last_exc}") from last_exc
+
+        pipeline = dai.Pipeline(device)
         cam_rgb, stereo = self._build_camera_nodes(pipeline)
 
         self._q_rgb = cam_rgb.isp.createOutputQueue(maxSize=4, blocking=False)

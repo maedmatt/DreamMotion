@@ -48,33 +48,33 @@ def test_stop() -> None:
 
 
 def test_walk_forward(sdk: object) -> None:
-    """Walk forward 1m at 0.25 m/s (~4 seconds)."""
+    """Walk forward 0.5m."""
     from g1.locomotion.sdk_controller import SdkLocomotionController
 
     assert isinstance(sdk, SdkLocomotionController)
 
-    print("\n  Will walk ~1m forward.")
-    print("  >>> Ensure 2m clear space ahead — press Enter to start <<<")
+    print("\n  Will walk ~0.5m forward.")
+    print("  >>> Ensure 1m clear space ahead — press Enter to start <<<")
     input()
 
-    sdk.walk_forward_distance(1.0, yaw_rad=0.0)
-    _pass("walked forward ~1m (open-loop)")
+    sdk.walk_forward_distance(0.5, yaw_rad=0.0)
+    _pass("walked forward ~0.5m (open-loop)")
 
 
 def test_walk_with_turn(sdk: object) -> None:
-    """Turn ~30° left then walk 0.5m forward."""
+    """Turn 45° left then walk 0.5m forward."""
     import math
 
     from g1.locomotion.sdk_controller import SdkLocomotionController
 
     assert isinstance(sdk, SdkLocomotionController)
 
-    print("\n  Will turn ~30° left then walk ~0.5m forward.")
+    print("\n  Will turn 45° left then walk ~0.5m forward.")
     print("  >>> Ensure space in that direction — press Enter <<<")
     input()
 
-    sdk.walk_forward_distance(0.5, yaw_rad=math.radians(30))
-    _pass("turn + walk forward completed")
+    sdk.walk_forward_distance(0.5, yaw_rad=math.radians(45))
+    _pass("turn 45° + walk 0.5m completed")
 
 
 def test_step_backward(sdk: object) -> None:

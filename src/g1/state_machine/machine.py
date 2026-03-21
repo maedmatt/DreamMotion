@@ -5,6 +5,7 @@ import os
 from typing import TYPE_CHECKING, Literal
 
 import httpx
+import numpy as np
 
 from g1.locomotion.kimodo_controller import walk_to_point_kimodo
 from g1.stance.controller import stabilize_for_vision
@@ -182,28 +183,28 @@ class TreasureHuntStateMachine:
         self._say(f"Looking for the {self._target}...")
         self._stabilize()
 
-        frame = self._camera.capture()
-        detections = self._detector.detect(frame, [self._target])
+        points: list[tuple[float, float, float]] = []
+        for _ in range(5):
+            frame = self._camera.capture()
+            detections = self._detector.detect(frame, [self._target])
+            if detections and detections[0].depth_valid and detections[0].point_camera is not None:
+                points.append(detections[0].point_camera)
 
-        if not detections:
+        if not points:
             return StateResult(
                 status="retry",
                 next_state=State.LOOK,
-                message=f"No {self._target} detected",
+                message=f"No valid {self._target} detection across 3 frames",
             )
 
-        best = detections[0]
-        if not best.depth_valid or best.point_camera is None:
-            return StateResult(
-                status="retry",
-                next_state=State.LOOK,
-                message="Detection found but depth is invalid",
-            )
+        avg_point: tuple[float, float, float] = (
+            float(np.median([p[0] for p in points])),
+            float(np.median([p[1] for p in points])),
+            float(np.median([p[2] for p in points])),
+        )
 
         # Always compute base_link position (no odometry needed)
-        base_xyz = self._tf.transform_point_between(
-            best.point_camera, "camera", "base"
-        )
+        base_xyz = self._tf.transform_point_between(avg_point, "camera", "base")
         self._target_local_xyz = base_xyz
 
         # Optionally compute world position when odometry is available
@@ -218,8 +219,8 @@ class TreasureHuntStateMachine:
 
         detection_payload = {
             "look_detection": {
-                "label": best.label,
-                "confidence": best.confidence,
+                "label": self._target,
+                "frames_used": len(points),
                 "base_xyz": base_xyz.tolist(),
                 "world_xyz": self._target_world_xyz.tolist(),
             }
@@ -305,31 +306,39 @@ class TreasureHuntStateMachine:
         self._say("Getting a closer look...")
         self._stabilize()
 
-        frame = self._camera.capture()
-        detections = self._detector.detect(frame, [self._target])
+        points: list[tuple[float, float, float]] = []
+        for _ in range(5):
+            frame = self._camera.capture()
+            detections = self._detector.detect(frame, [self._target])
+            if detections and detections[0].depth_valid and detections[0].point_camera is not None:
+                points.append(detections[0].point_camera)
 
-        if not detections:
+        if not points:
+            # Check if any detection at all (depth just invalid = too close)
+            frame = self._camera.capture()
+            detections = self._detector.detect(frame, [self._target])
+            if detections and not detections[0].depth_valid:
+                self._say("Too close, stepping back a little.")
+                self._sdk.step_backward(0.2)
+                return StateResult(
+                    status="retry",
+                    next_state=State.LOOK_AGAIN,
+                    message="Depth invalid at close range, stepping back",
+                )
             return StateResult(
                 status="retry",
                 next_state=State.LOOK,
                 message="Lost target at close range — restarting search",
             )
 
-        best = detections[0]
-        if not best.depth_valid or best.point_camera is None:
-            # Too close — step backward
-            self._say("Too close, stepping back a little.")
-            self._sdk.step_backward(0.2)
-            return StateResult(
-                status="retry",
-                next_state=State.LOOK_AGAIN,
-                message="Depth invalid at close range, stepping back",
-            )
+        avg_point: tuple[float, float, float] = (
+            float(np.median([p[0] for p in points])),
+            float(np.median([p[1] for p in points])),
+            float(np.median([p[2] for p in points])),
+        )
 
         # Transform to base_link (local frame) for the ACT state
-        local_xyz = self._tf.transform_point_between(
-            best.point_camera, "camera", "base"
-        )
+        local_xyz = self._tf.transform_point_between(avg_point, "camera", "base")
         self._target_local_xyz = local_xyz
         self._say(f"Target locked! Preparing to act on the {self._target}.")
 
@@ -338,8 +347,8 @@ class TreasureHuntStateMachine:
             next_state=State.ACT,
             payload={
                 "look_again_detection": {
-                    "label": best.label,
-                    "confidence": best.confidence,
+                    "label": self._target,
+                    "frames_used": len(points),
                     "local_xyz": local_xyz.tolist(),
                 }
             },
