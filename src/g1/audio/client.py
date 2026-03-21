@@ -5,6 +5,8 @@ import os
 from dataclasses import dataclass
 from functools import lru_cache
 
+from g1.unitree_common import ensure_channel_initialized
+
 
 @dataclass(frozen=True, slots=True)
 class UnitreeAudioConfig:
@@ -12,17 +14,18 @@ class UnitreeAudioConfig:
     timeout_seconds: float
 
 
-def _load_unitree_sdk() -> tuple[object, object]:
+def _load_audio_module() -> object:
     try:
-        channel_module = importlib.import_module("unitree_sdk2py.core.channel")
-        audio_module = importlib.import_module("unitree_sdk2py.g1.audio.g1_audio_client")
+        audio_module = importlib.import_module(
+            "unitree_sdk2py.g1.audio.g1_audio_client"
+        )
     except ModuleNotFoundError as exc:
         raise RuntimeError(
             "Unitree audio support requires the official Unitree SDK2 Python "
             "package, which exposes the `unitree_sdk2py` import path."
         ) from exc
 
-    return channel_module, audio_module
+    return audio_module
 
 
 def _load_config() -> UnitreeAudioConfig:
@@ -47,11 +50,10 @@ def _load_config() -> UnitreeAudioConfig:
 
 class UnitreeAudioService:
     def __init__(self, config: UnitreeAudioConfig) -> None:
-        channel_module, audio_module = _load_unitree_sdk()
+        ensure_channel_initialized(config.network_interface)
+        audio_module = _load_audio_module()
 
-        channel_module.ChannelFactoryInitialize(0, config.network_interface)
-
-        client = audio_module.AudioClient()
+        client = audio_module.AudioClient()  # type: ignore[attr-defined]
         client.Init()
         client.SetTimeout(config.timeout_seconds)
         self._client = client

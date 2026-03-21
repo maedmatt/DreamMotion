@@ -6,6 +6,7 @@ from strands import Agent
 from strands.models.openai import OpenAIModel
 
 from agent.tools.generate_motion import generate_motion
+from agent.tools.treasure_hunt import treasure_hunt
 from g1.audio import say_text
 
 SYSTEM_PROMPT = dedent("""
@@ -27,6 +28,13 @@ SYSTEM_PROMPT = dedent("""
     generate_motion with the user's description exactly as stated — the tool
     handles all prompt optimization internally.
 
+    When the user asks you to find, hunt for, locate, go to, or interact with
+    a specific object in the real world, call the treasure_hunt tool with the
+    object description. This will autonomously search for, approach, and
+    interact with the object using the camera and locomotion systems.
+    You can optionally specify walk_method="KIMODO" to use trajectory-based
+    walking instead of the default SDK velocity controller.
+
     Report the resulting file paths, motion details, and spoken lines back to
     the user. If a warning is returned, relay it to the user.
 """).strip()
@@ -37,5 +45,5 @@ def create_agent() -> Agent:
     return Agent(
         model=model,
         system_prompt=SYSTEM_PROMPT,
-        tools=[generate_motion, say_text],
+        tools=[generate_motion, say_text, treasure_hunt],
     )
