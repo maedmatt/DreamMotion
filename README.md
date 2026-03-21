@@ -28,9 +28,15 @@ User ──► Agent (GPT-4.1) ──► Prompt Refiner (GPT-4.1-mini) ──►
 Clone repos side by side:
 
 ```bash
-git clone <this-repo> g1-treasure-hunt
+git clone --recurse-submodules <this-repo> g1-treasure-hunt
 git clone https://github.com/HansZ8/RoboJuDo
 git clone https://github.com/unitreerobotics/unitree_sdk2_python  # optional, for TTS
+```
+
+If you already cloned without `--recurse-submodules`, pull the submodules manually:
+
+```bash
+git submodule update --init --recursive
 ```
 
 Install:
