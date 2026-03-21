@@ -13,8 +13,12 @@ from g1.publisher import publish_motion
 
 log = logging.getLogger(__name__)
 
-KIMODO_URL = os.environ.get("KIMODO_URL", "http://localhost:8420")
 OUTPUT_DIR = Path("output")
+
+
+def _kimodo_url() -> str:
+    return os.environ.get("KIMODO_URL", "http://localhost:8420")
+
 
 # 36 values per frame: root position (3), root quaternion wxyz (4), joint angles (29)
 CSV_HEADER = "root_x,root_y,root_z,quat_w,quat_x,quat_y,quat_z," + ",".join(
@@ -32,7 +36,7 @@ def _call_kimodo(
 
     # JSON endpoint → CSV
     response = httpx.post(
-        f"{KIMODO_URL}/generate",
+        f"{_kimodo_url()}/generate",
         json=body,
         timeout=120.0,
     )
@@ -50,7 +54,7 @@ def _call_kimodo(
     pt_bytes = None
     try:
         pt_response = httpx.post(
-            f"{KIMODO_URL}/generate/pt",
+            f"{_kimodo_url()}/generate/pt",
             json=body,
             timeout=120.0,
         )
