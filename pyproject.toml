@@ -36,6 +36,7 @@ packages = ["src/agent", "src/g1"]
 target-version = "py311"
 src = ["src", "devtools", "scripts"]
 line-length = 88
+extend-exclude = ["*.ipynb"]
 
 [tool.ruff.lint]
 select = [
@@ -56,3 +57,4 @@ select = [
 pythonVersion = "3.11"
 typeCheckingMode = "standard"
 include = ["src", "devtools", "scripts"]
+exclude = ["**/*.ipynb"]
