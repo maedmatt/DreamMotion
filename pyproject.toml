@@ -7,7 +7,7 @@ dependencies = [
     "httpx",
     "depthai",
     "opencv-python",
-    "inference",
+    "ultralytics",
     "supervision",
     "numpy",
     "scipy",

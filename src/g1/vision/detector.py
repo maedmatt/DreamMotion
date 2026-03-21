@@ -27,10 +27,13 @@ class Detection:
 class ObjectDetector:
     """Zero-shot object detector using YOLO-World + supervision."""
 
-    def __init__(self, model_id: str = "yolo_world/l", confidence: float = 0.3) -> None:
-        inference_mod = importlib.import_module("inference")
-        self._model = inference_mod.get_model(model_id)
+    def __init__(
+        self, model_id: str = "yolov8l-worldv2.pt", confidence: float = 0.3
+    ) -> None:
+        yolo_mod = importlib.import_module("ultralytics")
+        self._model = yolo_mod.YOLOWorld(model_id)
         self._confidence = confidence
+        self._current_classes: list[str] = []
 
     def detect(
         self,
@@ -48,9 +51,11 @@ class ObjectDetector:
         """
         sv = importlib.import_module("supervision")
 
-        self._model.set_classes(classes)
-        results = self._model.infer(frame.color, confidence=self._confidence)
-        detections = sv.Detections.from_inference(results)
+        if classes != self._current_classes:
+            self._model.set_classes(classes)
+            self._current_classes = list(classes)
+        results = self._model.predict(frame.color, conf=self._confidence, verbose=False)
+        detections = sv.Detections.from_ultralytics(results[0])
 
         camera = get_camera()
         output: list[Detection] = []

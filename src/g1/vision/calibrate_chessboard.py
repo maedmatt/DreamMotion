@@ -7,7 +7,6 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-
 DEFAULT_IMAGE_DIR = Path(__file__).resolve().parent / "img"
 DEFAULT_OUTPUT_PATH = Path(__file__).resolve().parent / "calibration.json"
 TERMINATION_CRITERIA = (
@@ -74,7 +73,9 @@ def _collect_corners(
     show_detections: bool,
 ) -> tuple[list[np.ndarray], list[np.ndarray], tuple[int, int]]:
     image_paths = sorted(
-        path for path in image_dir.iterdir() if path.suffix.lower() in {".png", ".jpg", ".jpeg"}
+        path
+        for path in image_dir.iterdir()
+        if path.suffix.lower() in {".png", ".jpg", ".jpeg"}
     )
     if not image_paths:
         raise RuntimeError(f"No images found in {image_dir}")
@@ -124,7 +125,8 @@ def _collect_corners(
 
     if not object_points or image_size is None:
         raise RuntimeError(
-            "No valid chessboard detections found. Capture more images with the full pattern visible."
+            "No valid chessboard detections found. "
+            "Capture more images with the full pattern visible."
         )
 
     return object_points, image_points, image_size
@@ -140,7 +142,9 @@ def _compute_mean_reprojection_error(
 ) -> float:
     total_error = 0.0
     total_points = 0
-    for objp, imgp, rvec, tvec in zip(object_points, image_points, rvecs, tvecs, strict=True):
+    for objp, imgp, rvec, tvec in zip(
+        object_points, image_points, rvecs, tvecs, strict=True
+    ):
         projected, _ = cv2.projectPoints(objp, rvec, tvec, camera_matrix, distortion)
         error = cv2.norm(imgp, projected, cv2.NORM_L2)
         total_error += error * error
@@ -158,18 +162,20 @@ def main() -> None:
         show_detections=args.show_detections,
     )
 
+    import numpy as np
+
     rms, camera_matrix, distortion, rvecs, tvecs = cv2.calibrateCamera(
         object_points,
         image_points,
         image_size,
-        None,
-        None,
+        np.zeros((3, 3), dtype=np.float64),
+        np.zeros(5, dtype=np.float64),
     )
     mean_error = _compute_mean_reprojection_error(
         object_points,
         image_points,
-        rvecs,
-        tvecs,
+        list(rvecs),
+        list(tvecs),
         camera_matrix,
         distortion,
     )

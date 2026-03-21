@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import atexit
 import importlib
+import json
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 
 import numpy as np
+
+_CALIB_FILE = Path(__file__).parent.parent.parent.parent / "config" / "calibration.json"
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,7 +85,24 @@ class OakCamera:
         return cam_rgb, stereo
 
     def _cache_intrinsics(self, cam_rgb) -> None:
+        # Prefer calibration file (OpenCV checkerboard result) over device values
+        if _CALIB_FILE.exists():
+            with _CALIB_FILE.open() as f:
+                data = json.load(f)
+            m = data["camera_matrix"]
+            size = data["image_size"]
+            self._intrinsics = Intrinsics(
+                fx=m[0][0],
+                fy=m[1][1],
+                cx=m[0][2],
+                cy=m[1][2],
+                width=size["width"],
+                height=size["height"],
+            )
+            return
+
         dai = self._dai
+        assert self._device is not None
         calib = self._device.readCalibration()
         intrinsics_matrix = calib.getCameraIntrinsics(
             dai.CameraBoardSocket.CAM_A,
@@ -175,12 +196,14 @@ class OakCamera:
 
     def stop(self) -> None:
         """Stop the camera pipeline. Idempotent."""
-        if getattr(self, "_pipeline", None) is not None:
-            self._pipeline.stop()
+        pipeline = getattr(self, "_pipeline", None)
+        if pipeline is not None:
+            pipeline.stop()
             self._pipeline = None
 
-        if getattr(self, "_device", None) is not None:
-            self._device.close()
+        device = getattr(self, "_device", None)
+        if device is not None:
+            device.close()
             self._device = None
 
 

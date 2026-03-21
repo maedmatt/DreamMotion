@@ -8,7 +8,6 @@ import cv2
 
 from g1.vision.camera import get_camera
 
-
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent / "img"
 WINDOW_NAME = "OAK-D Chessboard Capture"
 
