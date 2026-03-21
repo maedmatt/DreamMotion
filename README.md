@@ -43,26 +43,10 @@ cd <path_to_repo>
 uv pip install -e ~/unitree_sdk2_python
 ```
 
-4. Verify the install:
-
-```bash
-cd <path_to_repo>
-uv run python - <<'PY'
-import unitree_sdk2py
-print("unitree_sdk2py import OK")
-PY
-```
-
-5. Before using the speaker tool, set the robot-facing network interface:
+4. Before using the speaker tool, set the robot-facing network interface:
 
 ```bash
 export UNITREE_NETWORK_INTERFACE=<your_ethernet_interface>
-```
-
-Example:
-
-```bash
-export UNITREE_NETWORK_INTERFACE=enx806d97161839
 ```
 
 ### Microphone input setup
@@ -93,14 +77,6 @@ Pick a device with input channels greater than `0`. Ignore HDMI devices because 
 ```bash
 export VOICE_INPUT_DEVICE=<device_index>
 ```
-
-4. If microphone mode fails with `Invalid sample rate`, override the capture sample rate:
-
-```bash
-export VOICE_INPUT_SAMPLE_RATE=48000
-```
-
-If `48000` does not work, try `44100`. The code defaults to `16000`, but some ALSA devices only accept higher sample rates.
 
 ### Kimodo
 
@@ -151,19 +127,6 @@ In microphone mode, press Enter to start recording, press Enter again to stop.
 The agent runs preflight checks at startup — it verifies the OpenAI key, Kimodo health, network interface (if TTS), and microphone (if mic mode). Missing dependencies are caught before the loop starts.
 
 Results are saved as CSV and `.pt` in `output/`. Generated motions are published over ZMQ (`tcp://*:5555`) for downstream consumers (tracking policy, visualizer, etc.).
-
-### ZMQ subscriber example
-
-```python
-import zmq, json
-ctx = zmq.Context()
-s = ctx.socket(zmq.SUB)
-s.connect("tcp://localhost:5555")
-s.subscribe(b"motion")
-topic, meta, pt = s.recv_multipart()
-print(json.loads(meta))  # {"prompt": "...", "duration": 3.0}
-# torch.load(io.BytesIO(pt)) to get the tensor
-```
 
 ### Direct API
 
