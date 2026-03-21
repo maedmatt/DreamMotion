@@ -141,7 +141,7 @@ class OakCamera:
 
         dai = self._dai
         last_exc: Exception | None = None
-        for attempt in range(3):
+        for _attempt in range(3):
             try:
                 device = dai.Device()
                 break
@@ -149,7 +149,9 @@ class OakCamera:
                 last_exc = exc
                 time.sleep(2.0)
         else:
-            raise RuntimeError(f"OAK-D failed to open after 3 attempts: {last_exc}") from last_exc
+            raise RuntimeError(
+                f"OAK-D failed to open after 3 attempts: {last_exc}"
+            ) from last_exc
 
         pipeline = dai.Pipeline(device)
         cam_rgb, stereo = self._build_camera_nodes(pipeline)

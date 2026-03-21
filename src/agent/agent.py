@@ -34,9 +34,6 @@ SYSTEM_PROMPT = dedent("""
       - "walk_to" → "go to the X", "approach the X", "move towards the X"
       - "step_on" → "step on the X", "stomp on the X", "stand on the X"
       - "pick_up" → "pick up the X", "grab the X", "bring me the X"
-    You can optionally specify walk_method="KIMODO" to use trajectory-based
-    walking instead of the default SDK velocity controller.
-
     Report the resulting file paths, motion details, and spoken lines back to
     the user. If a warning is returned, relay it to the user.
 """).strip()

@@ -1,23 +1,20 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 from typing import TYPE_CHECKING, Literal
 
 import httpx
 import numpy as np
 
-from g1.locomotion.kimodo_controller import walk_to_point_kimodo
 from g1.stance.controller import stabilize_for_vision
 from g1.state_machine.types import State, StateResult
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    import numpy as np
-
     from g1.locomotion.sdk_controller import SdkLocomotionController
-    from g1.transforms.odometry import OdometrySubscriber
     from g1.transforms.service import TransformService
     from g1.vision.camera import OakCamera
     from g1.vision.detector import ObjectDetector
@@ -51,11 +48,9 @@ class TreasureHuntStateMachine:
         camera: OakCamera instance for RGB+Depth capture.
         detector: ObjectDetector instance for zero-shot detection.
         transforms: TransformService for coordinate frame conversions.
-        odometry: Optional OdometrySubscriber. When None the pipeline operates
-            entirely in base_link frame (no absolute world position needed).
-        sdk_controller: SDK locomotion controller (walk_method="SDK").
+        sdk_controller: SDK locomotion controller for open-loop walking.
         say: Callback to make the robot speak.
-        walk_method: "SDK" for P-controller, "KIMODO" for trajectory.
+        action: One of "locate", "walk_to", "step_on", "pick_up".
     """
 
     def __init__(
@@ -64,31 +59,23 @@ class TreasureHuntStateMachine:
         camera: OakCamera,
         detector: ObjectDetector,
         transforms: TransformService,
-        odometry: OdometrySubscriber | None,
         sdk_controller: SdkLocomotionController,
         say: Callable[[str], None],
-        walk_method: Literal["SDK", "KIMODO"] = "SDK",
         action: Action = "step_on",
     ) -> None:
         self._target = target_object
         self._camera = camera
         self._detector = detector
         self._tf = transforms
-        self._odom = odometry
         self._sdk = sdk_controller
         self._say = say
-        self._walk_method = walk_method
         self._action = action
 
         # State shared between handlers
-        self._target_world_xyz: np.ndarray | None = None
         self._target_local_xyz: np.ndarray | None = None
 
     def _stabilize(self) -> None:
-        """Stabilize for vision — velocity-based if odometry available, else sleep."""
-        stabilize_for_vision(
-            velocity_func=self._odom.velocity_magnitude if self._odom else None,
-        )
+        stabilize_for_vision(velocity_func=None)
 
     def run(self) -> dict[str, object]:
         """Execute the full LMLA pipeline.
@@ -155,11 +142,6 @@ class TreasureHuntStateMachine:
         return {
             "final_state": state.name,
             "target_object": self._target,
-            "target_world_xyz": (
-                self._target_world_xyz.tolist()
-                if self._target_world_xyz is not None
-                else None
-            ),
             "target_local_xyz": (
                 self._target_local_xyz.tolist()
                 if self._target_local_xyz is not None
@@ -173,13 +155,7 @@ class TreasureHuntStateMachine:
     # ------------------------------------------------------------------
 
     def _handle_look(self) -> StateResult:
-        """LOOK: Stabilize, detect target, record position in base_link frame.
-
-        When odometry is available the target is also projected to world (odom)
-        frame for absolute navigation. Without odometry we work entirely in
-        base_link — the base_link coordinates are used directly as relative
-        offsets for the MOVE state.
-        """
+        """LOOK: Stabilize, detect target, record position in base_link frame."""
         self._say(f"Looking for the {self._target}...")
         self._stabilize()
 
@@ -187,14 +163,18 @@ class TreasureHuntStateMachine:
         for _ in range(5):
             frame = self._camera.capture()
             detections = self._detector.detect(frame, [self._target])
-            if detections and detections[0].depth_valid and detections[0].point_camera is not None:
+            if (
+                detections
+                and detections[0].depth_valid
+                and detections[0].point_camera is not None
+            ):
                 points.append(detections[0].point_camera)
 
         if not points:
             return StateResult(
                 status="retry",
                 next_state=State.LOOK,
-                message=f"No valid {self._target} detection across 3 frames",
+                message=f"No valid {self._target} detection across 5 frames",
             )
 
         avg_point: tuple[float, float, float] = (
@@ -203,33 +183,20 @@ class TreasureHuntStateMachine:
             float(np.median([p[2] for p in points])),
         )
 
-        # Always compute base_link position (no odometry needed)
         base_xyz = self._tf.transform_point_between(avg_point, "camera", "base")
         self._target_local_xyz = base_xyz
 
-        # Optionally compute world position when odometry is available
-        if self._odom is not None:
-            world_xyz = self._tf.transform_point_between(
-                best.point_camera, "camera", "world"
-            )
-            self._target_world_xyz = world_xyz
-        else:
-            # Without odometry: treat base_link offset as the navigation target
-            self._target_world_xyz = base_xyz
-
-        detection_payload = {
+        detection_payload: dict[str, object] = {
             "look_detection": {
                 "label": self._target,
                 "frames_used": len(points),
                 "base_xyz": base_xyz.tolist(),
-                "world_xyz": self._target_world_xyz.tolist(),
             }
         }
 
         if self._action == "locate":
             self._say(
-                f"Found the {self._target}! "
-                f"It is {base_xyz[0]:.2f} metres ahead of me."
+                f"Found the {self._target}! It is {base_xyz[0]:.2f} metres ahead of me."
             )
             return StateResult(
                 status="ok",
@@ -245,60 +212,20 @@ class TreasureHuntStateMachine:
         )
 
     def _handle_move(self) -> StateResult:
-        """MOVE: Walk toward saved coordinate, stopping 0.5m short.
-
-        Three modes:
-          SDK + odometry  — closed-loop P-controller to world coordinates.
-          SDK, no odometry — open-loop: turn + timed walk using base_link offset.
-          KIMODO          — trajectory generation via Kimodo API.
-        """
-        if self._target_local_xyz is None or self._target_world_xyz is None:
+        """MOVE: Open-loop walk toward target, stopping 0.5m short."""
+        if self._target_local_xyz is None:
             return StateResult(
                 status="fail", next_state=State.FAIL, message="No target coordinate"
             )
 
-        if self._walk_method == "SDK":
-            if self._odom is not None:
-                # Closed-loop P-controller (full odometry available)
-                success = self._sdk.walk_to_point(
-                    target_x=float(self._target_world_xyz[0]),
-                    target_y=float(self._target_world_xyz[1]),
-                    current_odom_func=self._odom.get_state,
-                    stop_short_m=0.5,
-                )
-                if not success:
-                    return StateResult(
-                        status="fail", next_state=State.FAIL, message="Walk timed out"
-                    )
-            else:
-                # Open-loop: use base_link offset from camera
-                import math  # noqa: PLC0415
-
-                bx = float(self._target_local_xyz[0])
-                by = float(self._target_local_xyz[1])
-                distance = math.sqrt(bx * bx + by * by)
-                yaw = math.atan2(by, bx)
-                walk_dist = max(0.0, distance - 0.5)  # stop 0.5m short
-                self._sdk.walk_forward_distance(walk_dist, yaw_rad=yaw)
-        else:
-            current_x = float(self._odom.get_state().x) if self._odom else 0.0
-            current_y = float(self._odom.get_state().y) if self._odom else 0.0
-            result = walk_to_point_kimodo(
-                target_x=float(self._target_world_xyz[0]),
-                target_y=float(self._target_world_xyz[1]),
-                current_x=current_x,
-                current_y=current_y,
-                stop_short_m=0.5,
-            )
-            if result.get("status") == "already_close":
-                pass  # No need to walk
+        bx = float(self._target_local_xyz[0])
+        by = float(self._target_local_xyz[1])
+        distance = math.sqrt(bx * bx + by * by)
+        yaw = math.atan2(by, bx)
+        walk_dist = max(0.0, distance - 0.5)  # stop 0.5m short
+        self._sdk.walk_forward_distance(walk_dist, yaw_rad=yaw)
 
         self._stabilize()
-
-        if self._action == "walk_to":
-            self._say(f"Arrived near the {self._target}.")
-            return StateResult(status="ok", next_state=State.DONE)
-
         return StateResult(status="ok", next_state=State.LOOK_AGAIN)
 
     def _handle_look_again(self) -> StateResult:
@@ -310,7 +237,11 @@ class TreasureHuntStateMachine:
         for _ in range(5):
             frame = self._camera.capture()
             detections = self._detector.detect(frame, [self._target])
-            if detections and detections[0].depth_valid and detections[0].point_camera is not None:
+            if (
+                detections
+                and detections[0].depth_valid
+                and detections[0].point_camera is not None
+            ):
                 points.append(detections[0].point_camera)
 
         if not points:
@@ -337,25 +268,28 @@ class TreasureHuntStateMachine:
             float(np.median([p[2] for p in points])),
         )
 
-        # Transform to base_link (local frame) for the ACT state
         local_xyz = self._tf.transform_point_between(avg_point, "camera", "base")
         self._target_local_xyz = local_xyz
-        self._say(f"Target locked! Preparing to act on the {self._target}.")
 
-        return StateResult(
-            status="ok",
-            next_state=State.ACT,
-            payload={
-                "look_again_detection": {
-                    "label": self._target,
-                    "frames_used": len(points),
-                    "local_xyz": local_xyz.tolist(),
-                }
-            },
-        )
+        detection_payload: dict[str, object] = {
+            "look_again_detection": {
+                "label": self._target,
+                "frames_used": len(points),
+                "local_xyz": local_xyz.tolist(),
+            }
+        }
+
+        if self._action == "walk_to":
+            self._say(f"Arrived near the {self._target}. Target confirmed.")
+            return StateResult(
+                status="ok", next_state=State.DONE, payload=detection_payload
+            )
+
+        self._say(f"Target locked! Preparing to act on the {self._target}.")
+        return StateResult(status="ok", next_state=State.ACT, payload=detection_payload)
 
     def _handle_act(self) -> StateResult:
-        """ACT: Call Kimodo with foot constraint to step on the target."""
+        """ACT: Call Kimodo with foot/hand constraint to interact with the target."""
         if self._target_local_xyz is None:
             return StateResult(
                 status="fail",
@@ -363,9 +297,7 @@ class TreasureHuntStateMachine:
                 message="No local target coordinate",
             )
 
-        prompt, target_field = _ACT_CONFIG.get(
-            self._action, _ACT_CONFIG["step_on"]
-        )
+        prompt, target_field = _ACT_CONFIG.get(self._action, _ACT_CONFIG["step_on"])
         self._say(f"{prompt.capitalize()} targeting the {self._target}!")
 
         target_xyz = self._target_local_xyz.tolist()
