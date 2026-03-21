@@ -4,8 +4,10 @@ import importlib
 import tempfile
 import wave
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from g1.speech_input.config import SpeechInputConfig
+if TYPE_CHECKING:
+    from g1.speech_input.config import SpeechInputConfig
 
 
 def _load_sounddevice() -> object:
@@ -35,7 +37,7 @@ class LaptopMicrophoneRecorder:
             audio_path = Path(temp_file.name)
 
         try:
-            with self._sounddevice.InputStream(
+            with self._sounddevice.InputStream(  # pyright: ignore[reportAttributeAccessIssue]
                 samplerate=self._config.sample_rate,
                 channels=self._config.channels,
                 dtype="int16",
@@ -47,7 +49,7 @@ class LaptopMicrophoneRecorder:
             if not frames:
                 raise RuntimeError("No microphone audio was captured.")
 
-            audio_bytes = b"".join(frame.tobytes() for frame in frames)
+            audio_bytes = b"".join(frame.tobytes() for frame in frames)  # pyright: ignore[reportAttributeAccessIssue]
             with wave.open(str(audio_path), "wb") as wav_file:
                 wav_file.setnchannels(self._config.channels)
                 wav_file.setsampwidth(2)

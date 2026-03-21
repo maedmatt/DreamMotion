@@ -12,10 +12,12 @@ class UnitreeAudioConfig:
     timeout_seconds: float
 
 
-def _load_unitree_sdk() -> tuple[object, object]:
+def _load_unitree_sdk() -> tuple:  # pyright: ignore[reportMissingTypeArgument]
     try:
         channel_module = importlib.import_module("unitree_sdk2py.core.channel")
-        audio_module = importlib.import_module("unitree_sdk2py.g1.audio.g1_audio_client")
+        audio_module = importlib.import_module(
+            "unitree_sdk2py.g1.audio.g1_audio_client"
+        )
     except ModuleNotFoundError as exc:
         raise RuntimeError(
             "Unitree audio support requires the official Unitree SDK2 Python "
@@ -49,12 +51,18 @@ class UnitreeAudioService:
     def __init__(self, config: UnitreeAudioConfig) -> None:
         channel_module, audio_module = _load_unitree_sdk()
 
-        channel_module.ChannelFactoryInitialize(0, config.network_interface)
+        channel_module.ChannelFactoryInitialize(0, config.network_interface)  # pyright: ignore[reportAttributeAccessIssue]
 
-        client = audio_module.AudioClient()
+        client = audio_module.AudioClient()  # pyright: ignore[reportAttributeAccessIssue]
         client.Init()
         client.SetTimeout(config.timeout_seconds)
         self._client = client
+
+        volume = int(os.environ.get("UNITREE_AUDIO_VOLUME", "100"))
+        self.set_volume(volume)
+
+    def set_volume(self, volume: int) -> None:
+        self._client.SetVolume(volume)
 
     def say_text(self, text: str, speaker_id: int = 1) -> dict[str, object]:
         message = text.strip()

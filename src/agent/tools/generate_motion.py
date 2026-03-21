@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from datetime import UTC, datetime
 from pathlib import Path
@@ -8,6 +9,9 @@ import httpx
 from strands import tool
 
 from agent.prompt_refiner import refine_prompt
+from publisher import publish_motion
+
+log = logging.getLogger(__name__)
 
 KIMODO_URL = os.environ.get("KIMODO_URL", "http://localhost:8420")
 OUTPUT_DIR = Path("output")
@@ -18,22 +22,22 @@ CSV_HEADER = "root_x,root_y,root_z,quat_w,quat_x,quat_y,quat_z," + ",".join(
 )
 
 
-def _call_kimodo(prompt: str, duration: float, diffusion_steps: int) -> Path:
-    """Call Kimodo API for a single prompt and save qpos to a CSV file."""
+def _call_kimodo(
+    prompt: str, duration: float, diffusion_steps: int
+) -> tuple[Path, Path | None, bytes | None]:
+    """Call Kimodo API for a single prompt and save qpos as CSV and .pt."""
+    body = {"prompt": prompt, "duration": duration, "diffusion_steps": diffusion_steps}
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
+
+    # JSON endpoint → CSV
     response = httpx.post(
         f"{KIMODO_URL}/generate",
-        json={
-            "prompt": prompt,
-            "duration": duration,
-            "diffusion_steps": diffusion_steps,
-        },
+        json=body,
         timeout=120.0,
     )
     response.raise_for_status()
     data = response.json()
-
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
 
     qpos = data["qpos"]
     qpos_path = OUTPUT_DIR / f"qpos_{timestamp}.csv"
@@ -41,7 +45,23 @@ def _call_kimodo(prompt: str, duration: float, diffusion_steps: int) -> Path:
     lines.extend(",".join(str(v) for v in frame) for frame in qpos)
     qpos_path.write_text("\n".join(lines))
 
-    return qpos_path
+    # PT endpoint → raw tensor (best-effort)
+    pt_path = None
+    pt_bytes = None
+    try:
+        pt_response = httpx.post(
+            f"{KIMODO_URL}/generate/pt",
+            json=body,
+            timeout=120.0,
+        )
+        pt_response.raise_for_status()
+        pt_bytes = pt_response.content
+        pt_path = OUTPUT_DIR / f"qpos_{timestamp}.pt"
+        pt_path.write_bytes(pt_bytes)
+    except httpx.HTTPError:
+        log.warning("Failed to fetch .pt from Kimodo, skipping")
+
+    return qpos_path, pt_path, pt_bytes
 
 
 @tool
@@ -70,14 +90,20 @@ def generate_motion(description: str, diffusion_steps: int = 50) -> dict:
 
     results = []
     for prompt, duration in zip(prompts, durations, strict=True):
-        qpos_path = _call_kimodo(prompt, duration, diffusion_steps)
-        results.append(
-            {
-                "qpos_path": str(qpos_path),
-                "prompt": prompt,
-                "duration": duration,
-            }
-        )
+        qpos_path, pt_path, pt_bytes = _call_kimodo(prompt, duration, diffusion_steps)
+        motion: dict[str, str | float] = {
+            "qpos_path": str(qpos_path),
+            "prompt": prompt,
+            "duration": duration,
+        }
+        if pt_path:
+            motion["pt_path"] = str(pt_path)
+        if pt_bytes:
+            publish_motion(
+                metadata={"prompt": prompt, "duration": duration},
+                pt_bytes=pt_bytes,
+            )
+        results.append(motion)
 
     output: dict = {"motions": results}
     if warning:

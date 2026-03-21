@@ -8,6 +8,7 @@ dependencies = [
     "openai",
     "python-dotenv",
     "sounddevice",
+    "pyzmq",
 ]
 
 [project.scripts]
@@ -17,6 +18,7 @@ agent = "main:main"
 dev = [
     "ruff",
     "basedpyright",
+    "pre-commit",
 ]
 
 [build-system]

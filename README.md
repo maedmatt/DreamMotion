@@ -94,12 +94,6 @@ Pick a device with input channels greater than `0`. Ignore HDMI devices because 
 export VOICE_INPUT_DEVICE=<device_index>
 ```
 
-Example:
-
-```bash
-export VOICE_INPUT_DEVICE=5
-```
-
 4. If microphone mode fails with `Invalid sample rate`, override the capture sample rate:
 
 ```bash
@@ -108,31 +102,35 @@ export VOICE_INPUT_SAMPLE_RATE=48000
 
 If `48000` does not work, try `44100`. The code defaults to `16000`, but some ALSA devices only accept higher sample rates.
 
-5. Run microphone mode:
+### Kimodo
+
+The Kimodo server runs on a remote GPU instance. Either use the ngrok URL or an SSH tunnel:
 
 ```bash
-OPENAI_API_KEY=sk-... \
-UNITREE_NETWORK_INTERFACE=<your_ethernet_interface> \
-VOICE_INPUT_DEVICE=<device_index> \
-VOICE_INPUT_SAMPLE_RATE=48000 \
-uv run agent --mic
-```
+# Option 1: ngrok (set in .env)
+KIMODO_URL=https://<ngrok-subdomain>.ngrok-free.app
 
-### Kimodo tunnel
-
-The Kimodo server runs on a remote GPU instance. Open an SSH tunnel to access it locally:
-
-```bash
+# Option 2: SSH tunnel
 ssh -L 8420:localhost:8420 -L 7860:localhost:7860 <remote-host>
 ```
 
-- `localhost:8420` — Kimodo API
-- `localhost:7860` — Kimodo visualizer ([Viser](https://github.com/nerfstudio-project/viser))
+- `localhost:7860` — Kimodo visualizer ([Viser](https://github.com/nerfstudio-project/viser)), requires SSH tunnel
 
 Verify the connection:
 
 ```bash
 curl http://localhost:8420/health
+```
+
+### Environment
+
+Create a `.env` file in the project root:
+
+```
+OPENAI_API_KEY=sk-...
+KIMODO_URL=http://localhost:8420
+UNITREE_NETWORK_INTERFACE=en11
+UNITREE_AUDIO_VOLUME=100
 ```
 
 ## Usage
@@ -142,18 +140,31 @@ curl http://localhost:8420/health
 Text mode:
 
 ```bash
-OPENAI_API_KEY=sk-... uv run agent --text
+uv run agent --text
 ```
 
 Microphone mode:
 
 ```bash
-OPENAI_API_KEY=sk-... UNITREE_NETWORK_INTERFACE=<your_ethernet_interface> uv run agent --mic
+uv run agent --mic
 ```
 
-In microphone mode, press Enter to start recording, press Enter again to stop, and the transcribed speech is printed before it is sent to the agent.
+In microphone mode, press Enter to start recording, press Enter again to stop.
 
-Describe a motion and the agent calls Kimodo to generate it. Results are saved as CSV in `output/`.
+Describe a motion and the agent calls Kimodo to generate it. Results are saved as CSV and `.pt` in `output/`. Generated motions are published over ZMQ (`tcp://*:5555`) for downstream consumers (tracking policy, visualizer, etc.).
+
+### ZMQ subscriber example
+
+```python
+import zmq, json
+ctx = zmq.Context()
+s = ctx.socket(zmq.SUB)
+s.connect("tcp://localhost:5555")
+s.subscribe(b"motion")
+topic, meta, pt = s.recv_multipart()
+print(json.loads(meta))  # {"prompt": "...", "duration": 3.0}
+# torch.load(io.BytesIO(pt)) to get the tensor
+```
 
 ### Direct API
 

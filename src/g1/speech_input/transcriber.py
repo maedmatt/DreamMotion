@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import importlib
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-from g1.speech_input.config import SpeechInputConfig
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from g1.speech_input.config import SpeechInputConfig
 
 
 def _create_openai_client() -> object:
@@ -11,7 +14,8 @@ def _create_openai_client() -> object:
         openai_module = importlib.import_module("openai")
     except Exception as exc:
         raise RuntimeError(
-            "Speech-to-text mode requires the `openai` package in the current environment."
+            "Speech-to-text mode requires the `openai` package "
+            "in the current environment."
         ) from exc
 
     return openai_module.OpenAI()
@@ -24,7 +28,7 @@ class OpenAISpeechTranscriber:
 
     def transcribe(self, audio_path: Path) -> str:
         with audio_path.open("rb") as audio_file:
-            transcription = self._client.audio.transcriptions.create(
+            transcription = self._client.audio.transcriptions.create(  # pyright: ignore[reportAttributeAccessIssue]
                 model=self._config.transcribe_model,
                 file=audio_file,
                 response_format="text",
