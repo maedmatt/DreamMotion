@@ -4,7 +4,6 @@ Provides a FastAPI web interface with:
 - Text and voice input for motion descriptions
 - LLM text reply generation (always)
 - Kimodo motion generation + 3D preview (always)
-- ZMQ deployment to the robot
 
 Usage::
 
@@ -78,10 +77,6 @@ class GenerateRequest(BaseModel):
     prompt: str
 
 
-class DeployRequest(BaseModel):
-    task_id: str
-
-
 class TranscribeRequest(BaseModel):
     audio_base64: str
     mime_type: str | None = None
@@ -124,6 +119,24 @@ def index():
     return FileResponse(TEMPLATES_DIR / "index.html")
 
 
+_CSV_HEADER = ",".join(
+    ["root_x", "root_y", "root_z", "quat_w", "quat_x", "quat_y", "quat_z"]
+    + [f"joint_{i}" for i in range(29)]
+)
+
+
+def _ensure_csv_header(csv_text: str) -> str:
+    """Prepend a header row if the CSV has none (raw Kimodo output)."""
+    if not csv_text or not csv_text.strip():
+        return csv_text
+    first_line = csv_text.lstrip().split("\n", 1)[0]
+    try:
+        float(first_line.split(",", 1)[0])
+    except ValueError:
+        return csv_text
+    return _CSV_HEADER + "\n" + csv_text
+
+
 @app.post("/api/generate")
 def api_generate(req: GenerateRequest):
     """Generate motion + text reply for a user prompt.
@@ -151,9 +164,11 @@ def api_generate(req: GenerateRequest):
         logger.exception("Kimodo generation failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    # 3. Store results for viewer / deploy
+    # 3. Store results for viewer
     task_id = str(int(time.time() * 1000))
-    csv_content = qpos_path.read_text() if qpos_path.exists() else ""
+    csv_content = _ensure_csv_header(
+        qpos_path.read_text() if qpos_path.exists() else ""
+    )
 
     motion_data: dict[str, str] = {"prompt": prompt_text, "csv": csv_content}
     if pt_path:
@@ -235,19 +250,6 @@ def transcribe_audio(req: TranscribeRequest):
     finally:
         if tmp_path and tmp_path.exists():
             tmp_path.unlink(missing_ok=True)
-
-
-@app.post("/api/deploy")
-def deploy_motion(req: DeployRequest):
-    data = GENERATED_MOTION_DATA.get(req.task_id)
-    if not data:
-        raise HTTPException(status_code=404, detail="Motion not found")
-
-    pt_path = data.get("pt_path")
-    if not pt_path:
-        raise HTTPException(status_code=404, detail="No .pt file for this motion")
-
-    return {"status": "deployed", "pt_path": pt_path}
 
 
 @app.post("/api/speak")

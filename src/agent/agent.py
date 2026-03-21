@@ -6,7 +6,9 @@ from strands import Agent
 from strands.models.openai import OpenAIModel
 
 from agent.tools.generate_motion import generate_motion
-from agent.tools.treasure_hunt import treasure_hunt
+from agent.tools.treasure_hunt import (
+    treasure_hunt,  # pyright: ignore[reportMissingImports]
+)
 from g1.audio import say_text
 
 SYSTEM_PROMPT = dedent("""

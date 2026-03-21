@@ -41,11 +41,6 @@ const PRESENTATION_STEP_LINES = {
     'Building trajectory',
     'Finalizing motion',
   ],
-  zmq: [
-    'Streaming motion to the robot',
-    'Publishing commands to robot',
-    'Robot is alive!',
-  ],
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -56,8 +51,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const spinner = document.getElementById('loading-spinner');
   const viewerContainer = document.getElementById('viewer-container');
   const actionBar = document.getElementById('action-bar');
-  const deployStatus = document.getElementById('deploy-status');
-  const deployBtn = document.getElementById('deploy-btn');
   const micBtn = document.getElementById('mic-btn');
   const settingsBtn = document.getElementById('settings-btn');
   const settingsModal = document.getElementById('settings-modal');
@@ -68,7 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const presentationThoughtsEl = document.getElementById('presentation-thoughts');
   const presTextArea = document.getElementById('pres-text-area');
   const presStepsEl = document.getElementById('pres-steps');
-  const STEP_ORDER = ['llm', 'kimodo', 'zmq'];
+  const STEP_ORDER = ['llm', 'kimodo'];
   const agentReply = document.getElementById('agent-reply');
   const agentReplyText = document.getElementById('agent-reply-text');
   const speakBtn = document.getElementById('speak-btn');
@@ -79,7 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const autoSpeakToggle = document.getElementById('auto-speak-toggle');
   let presentationLines = [];
   let presentationLineId = 0;
-  const lastPresentationLineByStep = { llm: '', kimodo: '', zmq: '' };
+  const lastPresentationLineByStep = { llm: '', kimodo: '' };
 
   function readStorage(key, fallback = '') {
     try {
@@ -731,7 +724,6 @@ document.addEventListener('DOMContentLoaded', () => {
       pushPresentationLine('llm');
     }
     actionBar.classList.add('hidden');
-    deployStatus.classList.add('hidden');
 
     let kimodoNarrated = false;
     let kimodoTimer = null;
@@ -834,41 +826,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && !settingsModal.classList.contains('hidden')) {
       closeSettingsModal();
-    }
-  });
-
-  deployBtn.addEventListener('click', async () => {
-    if (!currentTaskId) return;
-
-    if (isPresentationMode) {
-      pushPresentationLine('zmq');
-    }
-
-    deployBtn.disabled = true;
-    deployBtn.textContent = "Deploying...";
-
-    try {
-      const response = await fetch('/api/deploy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task_id: currentTaskId })
-      });
-
-      if (!response.ok) throw new Error('Deploy Error');
-
-      deployStatus.classList.remove('hidden');
-      deployBtn.textContent = "Deploy to Robot";
-      deployBtn.disabled = false;
-
-      setTimeout(() => {
-        deployStatus.classList.add('hidden');
-      }, 3000);
-
-    } catch (err) {
-      deployBtn.textContent = "Deploy to Robot";
-      deployBtn.disabled = false;
-      alert("Failed to deploy");
-      console.error(err);
     }
   });
 
