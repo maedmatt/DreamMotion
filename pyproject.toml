@@ -69,3 +69,5 @@ pythonVersion = "3.11"
 typeCheckingMode = "standard"
 include = ["src", "devtools", "scripts"]
 exclude = ["**/*.ipynb"]
+reportMissingImports = "warning"
+reportCallIssue = "warning"
