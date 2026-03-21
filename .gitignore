@@ -6,3 +6,5 @@ __pycache__/
 .env
 output/
 src/g1/vision/img/
+*.pt
+.cache/
