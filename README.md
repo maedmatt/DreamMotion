@@ -1,132 +1,77 @@
-# G1 Treasure Hunt
+# G1 Voice2Motion
 
-LLM agent that generates Unitree G1 humanoid robot motions from natural language. Uses [Kimodo](https://github.com/NVIDIA/Kimodo) for motion generation via a Strands agent with OpenAI.
+LLM agent that generates Unitree G1 humanoid robot motions from natural language, and a deploy pipeline that plays them on the robot (sim or real).
+
+The system has two entry points that run as separate processes:
+- **`uv run agent`** — interactive agent loop. Takes text or voice input, calls [Kimodo](https://github.com/NVIDIA/Kimodo) to generate motions, saves `.pt` files to `output/`.
+- **`uv run deploy`** — robot control loop. Watches `output/` for new `.pt` files. Starts in locomotion mode (AMO policy), auto-switches to motion tracking when a file arrives, returns to locomotion when done.
+
+## Architecture
+
+```
+User ──► Agent (GPT-4.1) ──► Prompt Refiner (GPT-4.1-mini) ──► Kimodo (diffusion model)
+                                                                      │
+                                                                 .pt file
+                                                                      │
+                                                              output/ directory
+                                                                      │
+                                                    Deploy pipeline (file watcher)
+                                                           │              │
+                                                      Locomotion ◄──► Motion Tracking
+                                                       (AMO)        (BeyondMimic tracker)
+                                                           │
+                                                    MuJoCo sim / Real G1
+```
 
 ## Setup
 
-```bash
-uv sync
-```
-
-### Unitree SDK install
-
-The audio tool uses Unitree's official Python SDK, which depends on CycloneDDS.
-Install it on the same machine where you will run this project.
-
-1. Build and install CycloneDDS:
+Clone repos side by side:
 
 ```bash
-sudo apt update
-sudo apt install -y cmake build-essential python3-pip
-
-cd ~
-git clone https://github.com/eclipse-cyclonedds/cyclonedds -b releases/0.10.x
-cd cyclonedds
-mkdir -p build install
-cd build
-cmake .. -DCMAKE_INSTALL_PREFIX=$HOME/cyclonedds/install
-cmake --build . --target install -j"$(nproc)"
+git clone <this-repo> g1-treasure-hunt
+git clone https://github.com/HansZ8/RoboJuDo
+git clone https://github.com/unitreerobotics/unitree_sdk2_python  # optional, for TTS
 ```
 
-2. Clone Unitree's Python SDK:
+Install:
 
 ```bash
-cd ~
-git clone https://github.com/unitreerobotics/unitree_sdk2_python.git
+cd g1-treasure-hunt
+uv sync                    # core agent only
+uv sync --extra deploy     # + robot deploy pipeline (requires ../RoboJuDo)
+uv sync --extra tts        # + robot speaker (requires ../unitree_sdk2_python + CycloneDDS)
 ```
 
-3. Install the SDK into this project's environment:
-
-```bash
-export CYCLONEDDS_HOME=$HOME/cyclonedds/install
-cd <path_to_repo>
-uv pip install -e ~/unitree_sdk2_python
-```
-
-4. Before using the speaker tool, set the robot-facing network interface:
-
-```bash
-export UNITREE_NETWORK_INTERFACE=<your_ethernet_interface>
-```
-
-### Microphone input setup
-
-Microphone mode uses your laptop microphone through `sounddevice`, which requires a local PortAudio installation.
-
-1. Install PortAudio on your machine:
-
-```bash
-sudo apt update
-sudo apt install -y libportaudio2 portaudio19-dev
-```
-
-2. List available audio devices:
-
-```bash
-cd <path_to_repo>
-uv run python - <<'PY'
-import sounddevice as sd
-print(sd.query_devices())
-PY
-```
-
-Pick a device with input channels greater than `0`. Ignore HDMI devices because they are outputs only.
-
-3. Select the microphone device by index:
-
-```bash
-export VOICE_INPUT_DEVICE=<device_index>
-```
-
-### Kimodo
-
-The Kimodo server runs on a remote GPU instance. Either use the ngrok URL or an SSH tunnel:
-
-```bash
-# Option 1: ngrok (set in .env)
-KIMODO_URL=https://<ngrok-subdomain>.ngrok-free.app
-
-# Option 2: SSH tunnel
-ssh -L 8420:localhost:8420 -L 7860:localhost:7860 <remote-host>
-```
-
-- `localhost:7860` — Kimodo visualizer ([Viser](https://github.com/nerfstudio-project/viser)), requires SSH tunnel
-
-Verify the connection (ngrok requires the skip-browser-warning header):
-
-```bash
-curl -H "ngrok-skip-browser-warning: true" http://localhost:8420/health
-```
+The deploy extra requires [RoboJuDo](https://github.com/HansZ8/RoboJuDo) cloned as `../RoboJuDo`. The TTS extra requires [unitree_sdk2_python](https://github.com/unitreerobotics/unitree_sdk2_python) cloned as `../unitree_sdk2_python` and CycloneDDS built locally (`CYCLONEDDS_HOME` must be set before install).
 
 ### Environment
 
-Create a `.env` file in the project root:
+Create a `.env` file:
 
 ```
 OPENAI_API_KEY=sk-...
-KIMODO_URL=http://localhost:8420
+KIMODO_URL=https://<ngrok-subdomain>.ngrok-free.app
+```
+
+Add these if using the robot speaker:
+
+```
 UNITREE_NETWORK_INTERFACE=en11
 UNITREE_AUDIO_VOLUME=100
 ```
 
-## Usage
+### Kimodo server
 
-### Agent (interactive)
+Kimodo runs on a remote GPU instance. Access via ngrok URL (set in `.env`) or SSH tunnel:
 
 ```bash
-uv run agent                    # text input, all modules on
-uv run agent --mode mic         # microphone input
-uv run agent --no-tts           # disable robot speaker
-uv run agent --kimodo-url URL   # override Kimodo endpoint
+ssh -L 8420:localhost:8420 -L 7860:localhost:7860 <remote-host>
 ```
 
-In microphone mode, press Enter to start recording, press Enter again to stop.
+- `localhost:8420` — Kimodo API
+- `localhost:7860` — Kimodo visualizer ([Viser](https://github.com/nerfstudio-project/viser)), SSH tunnel only
 
-The agent runs preflight checks at startup — it verifies the OpenAI key, Kimodo health, network interface (if TTS), and microphone (if mic mode). Missing dependencies are caught before the loop starts.
-
-Results are saved as CSV and `.pt` in `output/`. The deploy pipeline ([hack26-ethrc-deploy](https://github.com/shafeef901/hack26-ethrc-deploy)) watches this directory and plays motions on the robot.
-
-### Direct API
+## Kimodo API
 
 The Kimodo server exposes three generation endpoints, all accepting the same request body:
 
@@ -163,7 +108,66 @@ Request body fields:
 | `final_dof_pos` | float[29] | — | Joint angles in radians for soft pose guidance on the last frame. |
 | `constraints` | array | — | Raw Kimodo constraint dicts (root2d, fullbody, end-effector). |
 
-Each output frame has 36 values: root position xyz (3), root quaternion wxyz (4), and 29 joint angles in radians. Set client timeout to at least 60 seconds.
+Each output frame has 36 values: root position xyz (3), root quaternion wxyz (4), and 29 joint angles in radians. The `/generate/pt` endpoint returns a ProtoMotions MotionLib file ready for the deploy pipeline. Set client timeout to at least 60 seconds.
+
+## Usage
+
+Run `--help` on either entry point for all available flags.
+
+### Agent
+
+```bash
+uv run agent
+```
+
+Generates `.pt` motion files into `output/`. The agent runs preflight checks at startup and exits early if dependencies are missing.
+
+### Deploy pipeline
+
+```bash
+uv run deploy --motion-path output/some_motion.pt
+```
+
+Starts in locomotion mode. Watches `output/` for new `.pt` files. When one appears, auto-switches to motion tracking, plays the motion, then returns to locomotion.
+
+For the real robot:
+
+```bash
+uv run deploy --config g1_agent_locomimic_real --motion-path output/some_motion.pt
+```
+
+The ONNX tracker model (`unified_pipeline.onnx` + `.yaml`) must be placed in `../RoboJuDo/assets/models/g1/protomotions_bm_tracker/`.
+
+### End-to-end demo
+
+```bash
+# Terminal 1: agent
+uv run agent --no-tts
+
+# Terminal 2: deploy (sim)
+uv run deploy --motion-path output/some_motion.pt
+```
+
+Talk to the agent, it generates motions, the robot plays them automatically.
+
+## Project structure
+
+```
+src/
+  main.py                          # agent entry point
+  agent/
+    agent.py                       # Strands agent setup, system prompt
+    prompt_refiner.py              # GPT-4.1-mini prompt optimization for Kimodo
+    tools/
+      generate_motion.py           # @tool — calls Kimodo API, saves .pt files
+  g1/
+    audio/                         # Unitree TTS (robot speaker)
+    speech_input/                  # Microphone input + OpenAI transcription
+  deploy/
+    run.py                         # deploy entry point (tyro CLI)
+    agent_tracker_policy.py        # file watcher + auto-switch policy
+    configs.py                     # LocoMimic configs for sim and real robot
+```
 
 ## Development
 
