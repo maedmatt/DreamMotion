@@ -30,6 +30,8 @@ def _call_kimodo(
     final_dof_pos: list[float] | None = None,
     num_samples: int = 1,
     num_transition_frames: int = 5,
+    cfg_type: str = "regular",
+    cfg_weight: list[float] | None = None,
     constraints: list[dict] | None = None,
 ) -> tuple[Path, Path | None]:
     """Call Kimodo API and save results as CSV and .pt."""
@@ -46,6 +48,10 @@ def _call_kimodo(
         body["num_samples"] = num_samples
     if num_transition_frames != 5:
         body["num_transition_frames"] = num_transition_frames
+    if cfg_type != "regular":
+        body["cfg_type"] = cfg_type
+    if cfg_weight is not None:
+        body["cfg_weight"] = cfg_weight
     if constraints:
         body["constraints"] = constraints
 

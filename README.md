@@ -105,8 +105,13 @@ curl -X POST http://localhost:8420/generate \
 | `prompt` | string | *required* | Motion description |
 | `duration` | float | 3.0 | Motion length in seconds (0.5–30.0), output at 30 fps |
 | `diffusion_steps` | int | 100 | Denoising steps (50 = fast, 100 = quality) |
+| `num_samples` | int | 1 | Number of motion variations (1–4) |
+| `num_transition_frames` | int | 5 | Blending frames between sequential prompt segments |
+| `cfg_type` | string | `"regular"` | Guidance type: `"regular"` (guided) or `"nocfg"` (no guidance) |
+| `cfg_weight` | float[] | — | Guidance scale(s) when `cfg_type="regular"` |
 | `initial_dof_pos` | float[29] | — | Soft pose guidance on first frame |
 | `final_dof_pos` | float[29] | — | Soft pose guidance on last frame |
+| `constraints` | array | — | Raw Kimodo constraint dicts (root2d, fullbody, end-effector) |
 
 Each frame has 36 values: root xyz (3), root quaternion wxyz (4), 29 joint angles in radians.
 
