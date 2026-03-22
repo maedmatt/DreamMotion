@@ -90,7 +90,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!response.ok) throw new Error('Failed to generate candidates');
       const data = await response.json();
       removeTypingIndicator();
-      addBotBubble('Here are 3 variations — click your favorite!');
+      const selectionToolInfo = [
+        {name: 'generate_motion', detail: data.prompt, duration: data.duration + 's'},
+        {name: 'say_text', detail: 'Pick your favorite!'},
+      ];
+      addBotBubble('Pick your favorite!', 'Pick your favorite!', selectionToolInfo);
+      void speakText('Pick your favorite!');
       const cards = candidatesGrid.querySelectorAll('.candidate-card');
       data.candidates.forEach((c, i) => {
         if (cards[i]) {
