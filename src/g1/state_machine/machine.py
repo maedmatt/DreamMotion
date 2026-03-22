@@ -70,6 +70,7 @@ class TreasureHuntStateMachine:
         sdk_controller: SdkLocomotionController | None,
         say: Callable[[str], None],
         arm_controller: ArmPointController | None = None,
+        arm_warning: str | None = None,
         action: Action = "step_on",
     ) -> None:
         self._target = target_object
@@ -79,6 +80,7 @@ class TreasureHuntStateMachine:
         self._sdk = sdk_controller
         self._say = say
         self._arm = arm_controller
+        self._arm_warning = arm_warning
         self._action = action
 
         # State shared between handlers
@@ -162,6 +164,43 @@ class TreasureHuntStateMachine:
             **result_payload,
         }
 
+    def _point_at_current_target(self, *, required: bool) -> dict[str, object]:
+        """Point at the current target if arm control is available.
+
+        When *required* is False, failures are reported as warnings so the
+        higher-level action can still succeed. When True, failures raise.
+        """
+        if self._target_local_xyz is None:
+            message = "No target coordinate for pointing"
+            if required:
+                raise RuntimeError(message)
+            return {"point_warning": message}
+
+        target_tuple = (
+            float(self._target_local_xyz[0]),
+            float(self._target_local_xyz[1]),
+            float(self._target_local_xyz[2]),
+        )
+        payload: dict[str, object] = {"point_target_xyz": list(target_tuple)}
+
+        if self._arm is None:
+            message = self._arm_warning or "ArmPointController not provided"
+            if required:
+                raise RuntimeError(message)
+            payload["point_warning"] = message
+            return payload
+
+        try:
+            self._arm.point_at(target_tuple)
+        except Exception as exc:
+            if required:
+                raise RuntimeError(f"Pointing failed: {exc}") from exc
+            payload["point_warning"] = f"Pointing failed: {exc}"
+            return payload
+
+        payload["point_executed"] = True
+        return payload
+
     # ------------------------------------------------------------------
     # State handlers
     # ------------------------------------------------------------------
@@ -207,13 +246,25 @@ class TreasureHuntStateMachine:
         }
 
         if self._action == "locate":
-            self._say(
-                f"Found the {self._target}! It is {base_xyz[0]:.2f} metres ahead of me."
-            )
+            point_payload = self._point_at_current_target(required=False)
+            if point_payload.get("point_executed"):
+                self._say(
+                    f"Found the {self._target}! "
+                    f"It is {base_xyz[0]:.2f} metres ahead of me, and I am pointing at it now."
+                )
+            elif point_payload.get("point_warning"):
+                self._say(
+                    f"Found the {self._target}! "
+                    f"It is {base_xyz[0]:.2f} metres ahead of me, but I can't point right now."
+                )
+            else:
+                self._say(
+                    f"Found the {self._target}! It is {base_xyz[0]:.2f} metres ahead of me."
+                )
             return StateResult(
                 status="ok",
                 next_state=State.DONE,
-                payload=detection_payload,
+                payload={**detection_payload, **point_payload},
             )
 
         if self._action == "point_at":
@@ -352,31 +403,20 @@ class TreasureHuntStateMachine:
 
     def _handle_point(self) -> StateResult:
         """POINT: Raise the right arm and point at the detected target."""
-        if self._target_local_xyz is None:
-            return StateResult(
-                status="fail",
-                next_state=State.FAIL,
-                message="No target coordinate for pointing",
-            )
-        if self._arm is None:
-            return StateResult(
-                status="fail",
-                next_state=State.FAIL,
-                message="ArmPointController not provided",
-            )
-
-        target_tuple = (
-            float(self._target_local_xyz[0]),
-            float(self._target_local_xyz[1]),
-            float(self._target_local_xyz[2]),
-        )
         self._say(f"Pointing at the {self._target}!")
-        self._arm.point_at(target_tuple)
+        try:
+            point_payload = self._point_at_current_target(required=True)
+        except RuntimeError as exc:
+            return StateResult(
+                status="fail",
+                next_state=State.FAIL,
+                message=str(exc),
+            )
 
         return StateResult(
             status="ok",
             next_state=State.DONE,
-            payload={"point_target_xyz": list(target_tuple)},
+            payload=point_payload,
         )
 
     def _handle_act(self) -> StateResult:

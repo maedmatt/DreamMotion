@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import importlib
+import os
 import threading
 import time
 from dataclasses import dataclass, field
@@ -39,13 +40,31 @@ class ObjectDetector:
         device: str | None = None,
     ) -> None:
         yolo_mod = importlib.import_module("ultralytics")
-        torch_mod = importlib.import_module("torch")
-        self._torch = torch_mod
-        self._device = device or ("cuda:0" if torch_mod.cuda.is_available() else "cpu")
+        self._device = self._resolve_device(device)
         self._model = yolo_mod.YOLOWorld(model_id)
         self._confidence = confidence
         self._current_classes: list[str] = []
         self._sync_model_device()
+
+    @staticmethod
+    def _resolve_device(device: str | None) -> str:
+        """Pick the inference device without probing CUDA implicitly.
+
+        Some laptops crash inside PyTorch's CUDA availability probe. We default
+        to CPU unless the caller or environment explicitly requests another
+        device.
+        """
+        if device is not None:
+            resolved = device.strip()
+            return resolved or "cpu"
+
+        env_device = os.environ.get("G1_VISION_DEVICE")
+        if env_device:
+            resolved = env_device.strip()
+            if resolved:
+                return resolved
+
+        return "cpu"
 
     def _sync_model_device(self) -> None:
         self._model.to(self._device)

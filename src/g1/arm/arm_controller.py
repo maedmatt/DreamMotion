@@ -25,14 +25,13 @@ _R_WRIST_ROLL = 26
 # Left arm indices (held at current position during pointing)
 _LEFT_ARM_JOINTS = [15, 16, 17, 18, 19]
 _RIGHT_ARM_JOINTS = [22, 23, 24, 25, 26]
-_WAIST_YAW = 12  # only valid waist joint on the 23-DOF G1
 
-# All joints sent over rt/arm_sdk (matches arm5 example arm_joints list,
-# excluding invalid WaistRoll/WaistPitch 13/14 and invalid wrist joints 20/21/27/28)
+# We intentionally leave waist yaw out of the pointing controller so a simple
+# point gesture cannot twist the torso. The left arm is still published at its
+# current pose to keep the arm SDK override stable while the right arm moves.
 _CONTROLLED_JOINTS: list[int] = [
     *_LEFT_ARM_JOINTS,
     *_RIGHT_ARM_JOINTS,
-    _WAIST_YAW,
 ]
 
 # kNotUsedJoint — writing q=1 here enables the arm SDK override, q=0 releases it
@@ -41,6 +40,9 @@ _WEIGHT_JOINT = 29
 _KP = 60.0
 _KD = 1.5
 _CONTROL_DT = 0.02  # 50 Hz publish rate
+
+_POINT_ROLL_BIAS = -0.18
+_POINT_ELBOW_EXTENSION = -0.12
 
 
 class ArmPointController:
@@ -53,7 +55,7 @@ class ArmPointController:
 
     1. Blend from the robot's current arm pose to the computed pointing pose.
     2. Hold the pointing pose.
-    3. Return the arm to the zero (rest) pose and release the arm SDK override.
+    3. Return the arm to its sampled starting pose and release the arm SDK override.
 
     Usage::
 
@@ -106,8 +108,8 @@ class ArmPointController:
         Joint sign conventions (G1 right arm):
           RightShoulderPitch (22): 0 = arm hanging; positive = arm swings forward.
           RightShoulderRoll  (23): 0 = arm at side; negative = arm abducts to the right.
-          RightShoulderYaw   (24): held at 0 (neutral).
-          RightElbow         (25): 0 = arm straight (best for pointing).
+          RightShoulderYaw   (24): used for horizontal aiming toward the target.
+          RightElbow         (25): slightly extended for a straighter pointing pose.
           RightWristRoll     (26): held at 0 (neutral).
         """
         direction = np.asarray(target_xyz) - _RIGHT_SHOULDER_BASE
@@ -116,22 +118,25 @@ class ArmPointController:
             return None
         d = direction / dist  # unit vector in base_link: x=fwd, y=left, z=up
 
-        # Elevation in the sagittal (XZ) plane.
-        # d[2] negative = target below shoulder → positive pitch (arm forward-down).
-        pitch = math.atan2(-d[2], d[0])
-        pitch = max(-2.87, min(1.4, pitch))
+        horizontal = max(1e-6, math.hypot(d[0], d[1]))
 
-        # Lateral correction: targets to the right (negative d[1]) increase abduction.
-        # Scaled by 0.4 to stay conservative — the elbow is kept straight so the
-        # full arm direction is mostly determined by pitch.
-        roll = math.asin(max(-1.0, min(1.0, -d[1]))) * 0.4
-        roll = max(-0.5, min(0.3, roll))
+        # Elevation from the shoulder toward the target.
+        pitch = math.atan2(-d[2], horizontal)
+        pitch = max(-2.0, min(1.2, pitch))
+
+        # Use shoulder yaw for left/right aiming instead of forcing roll to do all the work.
+        yaw = math.atan2(d[1], d[0])
+        yaw = max(-1.2, min(1.2, yaw))
+
+        # Keep a small outward abduction bias so the upper arm clears the torso.
+        roll = _POINT_ROLL_BIAS + math.asin(max(-1.0, min(1.0, -d[1]))) * 0.15
+        roll = max(-0.45, min(0.2, roll))
 
         return {
             _R_SHOULDER_PITCH: pitch,
             _R_SHOULDER_ROLL: roll,
-            _R_SHOULDER_YAW: 0.0,
-            _R_ELBOW: 0.0,
+            _R_SHOULDER_YAW: yaw,
+            _R_ELBOW: _POINT_ELBOW_EXTENSION,
             _R_WRIST_ROLL: 0.0,
         }
 
@@ -202,12 +207,12 @@ class ArmPointController:
             self._publish(pointing_q, 1.0)
             time.sleep(_CONTROL_DT)
 
-        # Phase 3: return arm to zero / rest (blend toward q=0 while weight stays 1).
+        # Phase 3: return to the sampled starting pose while weight stays 1.
         for i in range(blend_steps):
             alpha = (i + 1) / blend_steps
-            returning: dict[int, float] = {
-                idx: pointing_q[idx] * (1.0 - alpha) for idx in _CONTROLLED_JOINTS
-            }
+            returning: dict[int, float] = {}
+            for idx in _CONTROLLED_JOINTS:
+                returning[idx] = pointing_q[idx] + alpha * (initial_q[idx] - pointing_q[idx])
             self._publish(returning, 1.0)
             time.sleep(_CONTROL_DT)
 

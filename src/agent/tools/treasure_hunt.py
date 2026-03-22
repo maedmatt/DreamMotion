@@ -68,13 +68,19 @@ def treasure_hunt(
         else "step_on"
     )  # type: ignore[assignment]
 
-    sdk = get_sdk_controller() if act != "locate" else None
+    sdk = get_sdk_controller() if act in ("walk_to", "step_on", "pick_up") else None
 
     arm = None
-    if act == "point_at":
-        from g1.arm.arm_controller import get_arm_controller
+    arm_warning = None
+    if act in ("locate", "point_at"):
+        try:
+            from g1.arm.arm_controller import get_arm_controller
 
-        arm = get_arm_controller()
+            arm = get_arm_controller()
+        except Exception as exc:
+            arm_warning = f"Pointing unavailable: {exc}"
+            if act == "point_at":
+                raise
 
     machine = TreasureHuntStateMachine(
         target_object=target_object,
@@ -84,6 +90,7 @@ def treasure_hunt(
         sdk_controller=sdk,
         say=say,  # type: ignore[arg-type]
         arm_controller=arm,
+        arm_warning=arm_warning,
         action=act,
     )
     return machine.run()
