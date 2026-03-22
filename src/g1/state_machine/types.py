@@ -9,6 +9,7 @@ class State(Enum):
     LOOK = auto()
     MOVE = auto()
     LOOK_AGAIN = auto()
+    POINT = auto()
     ACT = auto()
     DONE = auto()
     FAIL = auto()

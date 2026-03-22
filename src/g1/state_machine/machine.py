@@ -14,6 +14,7 @@ from g1.state_machine.types import State, StateResult
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from g1.arm.arm_controller import ArmPointController
     from g1.locomotion.sdk_controller import SdkLocomotionController
     from g1.transforms.service import TransformService
     from g1.vision.camera import OakCamera
@@ -44,7 +45,7 @@ _ACT_CONFIG: dict[str, tuple[str, str]] = {
     ),
 }
 
-Action = Literal["locate", "walk_to", "step_on", "pick_up"]
+Action = Literal["locate", "walk_to", "step_on", "pick_up", "point_at"]
 
 
 class TreasureHuntStateMachine:
@@ -68,6 +69,7 @@ class TreasureHuntStateMachine:
         transforms: TransformService,
         sdk_controller: SdkLocomotionController | None,
         say: Callable[[str], None],
+        arm_controller: ArmPointController | None = None,
         action: Action = "step_on",
     ) -> None:
         self._target = target_object
@@ -76,6 +78,7 @@ class TreasureHuntStateMachine:
         self._tf = transforms
         self._sdk = sdk_controller
         self._say = say
+        self._arm = arm_controller
         self._action = action
 
         # State shared between handlers
@@ -99,6 +102,7 @@ class TreasureHuntStateMachine:
             State.LOOK: self._handle_look,
             State.MOVE: self._handle_move,
             State.LOOK_AGAIN: self._handle_look_again,
+            State.POINT: self._handle_point,
             State.ACT: self._handle_act,
         }
 
@@ -209,6 +213,17 @@ class TreasureHuntStateMachine:
             return StateResult(
                 status="ok",
                 next_state=State.DONE,
+                payload=detection_payload,
+            )
+
+        if self._action == "point_at":
+            self._say(
+                f"Found the {self._target}! "
+                f"It is {base_xyz[0]:.2f} metres ahead. Pointing now."
+            )
+            return StateResult(
+                status="ok",
+                next_state=State.POINT,
                 payload=detection_payload,
             )
 
@@ -326,8 +341,43 @@ class TreasureHuntStateMachine:
                 status="ok", next_state=State.DONE, payload=detection_payload
             )
 
+        if self._action == "point_at":
+            self._say(f"Got a close look at the {self._target}. Pointing now.")
+            return StateResult(
+                status="ok", next_state=State.POINT, payload=detection_payload
+            )
+
         self._say(f"Target locked! Preparing to act on the {self._target}.")
         return StateResult(status="ok", next_state=State.ACT, payload=detection_payload)
+
+    def _handle_point(self) -> StateResult:
+        """POINT: Raise the right arm and point at the detected target."""
+        if self._target_local_xyz is None:
+            return StateResult(
+                status="fail",
+                next_state=State.FAIL,
+                message="No target coordinate for pointing",
+            )
+        if self._arm is None:
+            return StateResult(
+                status="fail",
+                next_state=State.FAIL,
+                message="ArmPointController not provided",
+            )
+
+        target_tuple = (
+            float(self._target_local_xyz[0]),
+            float(self._target_local_xyz[1]),
+            float(self._target_local_xyz[2]),
+        )
+        self._say(f"Pointing at the {self._target}!")
+        self._arm.point_at(target_tuple)
+
+        return StateResult(
+            status="ok",
+            next_state=State.DONE,
+            payload={"point_target_xyz": list(target_tuple)},
+        )
 
     def _handle_act(self) -> StateResult:
         """ACT: Call Kimodo with foot/hand constraint to interact with the target."""
