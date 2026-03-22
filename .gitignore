@@ -6,3 +6,5 @@ __pycache__/
 .env
 output/
 logs/
+.native/
+yolov8l-worldv2.pt

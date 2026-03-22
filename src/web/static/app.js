@@ -267,7 +267,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const res = await fetch('/api/speak', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, target: 'robot' }),
+          body: JSON.stringify({ text, target: 'robot', voice: ttsVoice }),
         });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
