@@ -30,8 +30,10 @@ _RIGHT_ARM_JOINTS = [22, 23, 24, 25, 26]
 # point gesture cannot twist the torso. The left arm is still published at its
 # current pose to keep the arm SDK override stable while the right arm moves.
 _CONTROLLED_JOINTS: list[int] = [
-    *_LEFT_ARM_JOINTS,
-    *_RIGHT_ARM_JOINTS,
+    *_LEFT_ARM_JOINTS,   # 15–19
+    20, 21,              # shoulder joints that sit between the two arm groups;
+                         # held at their current pose so they don't flop and load the torso
+    *_RIGHT_ARM_JOINTS,  # 22–26
 ]
 
 # kNotUsedJoint — writing q=1 here enables the arm SDK override, q=0 releases it
@@ -120,9 +122,12 @@ class ArmPointController:
 
         horizontal = max(1e-6, math.hypot(d[0], d[1]))
 
-        # Elevation from the shoulder toward the target.
-        pitch = math.atan2(-d[2], horizontal)
-        pitch = max(-2.0, min(1.2, pitch))
+        # Elevation angle measured from "arm hanging down" (joint-zero on G1).
+        # atan2(horizontal, -d[2]): when target is straight forward (d[2]=0),
+        # this gives π/2 which is the correct joint value for horizontal pointing.
+        # The previous order (atan2(-d[2], horizontal)) gave 0 → arm hangs down.
+        pitch = math.atan2(horizontal, -d[2])
+        pitch = max(-0.5, min(2.5, pitch))
 
         # Use shoulder yaw for left/right aiming instead of forcing roll to do all the work.
         yaw = math.atan2(d[1], d[0])
