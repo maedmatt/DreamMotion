@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -27,6 +29,49 @@ DEFAULT_DOF_POS: list[float] = [
 
 KIMODO_FPS = 30
 
+# fmt: off
+# Standing pose in Kimodo axis-angle format (34 joints x 3).
+# Pre-computed from DEFAULT_DOF_POS via MujocoQposConverter.
+_STANDING_LOCAL_JOINTS_ROT: list[list[float]] = [
+    [+0.000000, +0.000000, +0.000000],  # pelvis
+    [-0.312000, +0.000000, +0.000000],  # left_hip_pitch
+    [-0.174900, +0.000000, +0.000000],  # left_hip_roll
+    [+0.000000, +0.000000, +0.000000],  # left_hip_yaw
+    [+0.843899, +0.000000, +0.000000],  # left_knee
+    [-0.363000, +0.000000, +0.000000],  # left_ankle_pitch
+    [+0.000000, +0.000000, +0.000000],  # left_ankle_roll
+    [+0.000000, +0.000000, +0.000000],  # left_toe_base
+    [-0.312000, +0.000000, +0.000000],  # right_hip_pitch
+    [-0.174900, +0.000000, +0.000000],  # right_hip_roll
+    [+0.000000, +0.000000, +0.000000],  # right_hip_yaw
+    [+0.843899, +0.000000, +0.000000],  # right_knee
+    [-0.363000, +0.000000, +0.000000],  # right_ankle_pitch
+    [+0.000000, +0.000000, +0.000000],  # right_ankle_roll
+    [+0.000000, +0.000000, +0.000000],  # right_toe_base
+    [+0.000000, +0.000000, +0.000000],  # waist_yaw
+    [+0.000000, +0.000000, +0.000000],  # waist_roll
+    [+0.000000, +0.000000, +0.000000],  # waist_pitch
+    [+0.198723, -0.028128, +0.278355],  # left_shoulder_pitch
+    [+0.000000, +0.000000, -0.079252],  # left_shoulder_roll
+    [+0.000000, +0.000000, +0.000000],  # left_shoulder_yaw
+    [+0.600000, +0.000000, +0.000000],  # left_elbow
+    [+0.000000, +0.000000, +0.000000],  # left_wrist_roll
+    [+0.000000, +0.000000, +0.000000],  # left_wrist_pitch
+    [+0.000000, +0.000000, +0.000000],  # left_wrist_yaw
+    [+0.000000, +0.000000, +0.000000],  # left_hand_roll
+    [+0.198723, +0.028128, -0.278355],  # right_shoulder_pitch
+    [+0.000000, +0.000000, +0.079252],  # right_shoulder_roll
+    [+0.000000, +0.000000, +0.000000],  # right_shoulder_yaw
+    [+0.600000, +0.000000, +0.000000],  # right_elbow
+    [+0.000000, +0.000000, +0.000000],  # right_wrist_roll
+    [+0.000000, +0.000000, +0.000000],  # right_wrist_pitch
+    [+0.000000, +0.000000, +0.000000],  # right_wrist_yaw
+    [+0.000000, +0.000000, +0.000000],  # right_hand_roll
+]
+# fmt: on
+
+_STANDING_ROOT_HEIGHT_KIMODO = 0.7559
+
 # Direction → (dx, dy) unit vectors in MuJoCo ground plane (X=forward, Y=left)
 _DIRECTION_VECTORS: dict[str, tuple[float, float]] = {
     "forward": (1.0, 0.0),
@@ -38,6 +83,46 @@ _DIRECTION_VECTORS: dict[str, tuple[float, float]] = {
     "backward-left": (-0.707, 0.707),
     "backward-right": (-0.707, -0.707),
 }
+
+# Direction → yaw angle (radians) in Kimodo Y-up coords (rotation around Y).
+# Kimodo default forward is +Z; yaw>0 rotates toward +X (= MuJoCo left).
+_DIRECTION_YAWS: dict[str, float] = {
+    "forward": 0.0,
+    "backward": math.pi,
+    "left": math.pi / 2,
+    "right": -math.pi / 2,
+    "forward-left": math.pi / 4,
+    "forward-right": -math.pi / 4,
+    "backward-left": 3 * math.pi / 4,
+    "backward-right": -3 * math.pi / 4,
+}
+
+
+_DISTANCE_RE = re.compile(r"(\d+\.?\d*)\s*(?:m(?:eter)?s?\b|米)", re.IGNORECASE)
+
+
+def extract_motion_params(
+    prompt: str,
+) -> tuple[str, float]:
+    """Extract (move_direction, move_distance) from a free-text prompt.
+
+    Returns ("", 0.5) when no locomotion direction is detected.
+    Checks compound directions first (e.g. "forward-left") then single.
+    """
+    text = prompt.lower()
+
+    direction = ""
+    for d in sorted(_DIRECTION_VECTORS, key=len, reverse=True):
+        if d in text:
+            direction = d
+            break
+
+    distance = 0.5
+    m = _DISTANCE_RE.search(text)
+    if m:
+        distance = float(m.group(1))
+
+    return direction, distance
 
 
 def _mujoco_to_kimodo_2d(mujoco_x: float, mujoco_y: float) -> list[float]:
@@ -92,6 +177,47 @@ def _build_root2d_constraints(
         smooth_root_2d[-1],
     )
     return [constraint]
+
+
+def _build_standing_fullbody_constraint(
+    last_frame: int,
+    mujoco_target_x: float = 0.0,
+    mujoco_target_y: float = 0.0,
+    yaw: float = 0.0,
+) -> dict:
+    """Build a fullbody constraint on *last_frame* for the default standing pose.
+
+    Unlike ``final_dof_pos`` (which internally derives root from FK at origin),
+    this explicitly sets ``root_positions`` and ``smooth_root_2d`` to the
+    expected final base location, avoiding the root-pulled-to-origin conflict.
+
+    ``yaw`` (radians, Kimodo Y-up) rotates the pelvis so the robot faces the
+    direction of travel at the end of locomotion.
+    """
+    kimodo_x = mujoco_target_y
+    kimodo_z = mujoco_target_x
+    kimodo_y = _STANDING_ROOT_HEIGHT_KIMODO
+
+    joints_rot = [row[:] for row in _STANDING_LOCAL_JOINTS_ROT]
+    if abs(yaw) > 1e-6:
+        joints_rot[0] = [0.0, yaw, 0.0]
+
+    constraint: dict = {
+        "type": "fullbody",
+        "frame_indices": [last_frame],
+        "local_joints_rot": [joints_rot],
+        "root_positions": [[kimodo_x, kimodo_y, kimodo_z]],
+        "smooth_root_2d": [[kimodo_x, kimodo_z]],
+    }
+    log.info(
+        "fullbody standing: frame=%d, root=[%.3f,%.3f,%.3f], yaw=%.2f°",
+        last_frame,
+        kimodo_x,
+        kimodo_y,
+        kimodo_z,
+        math.degrees(yaw),
+    )
+    return constraint
 
 
 def _kimodo_url() -> str:
@@ -197,8 +323,11 @@ def generate_motion(
         description: Natural language description of the desired motion or sequence.
         diffusion_steps: Number of diffusion steps for generation quality (default 50).
         return_to_standing: If True (default), constrain the last frame to the G1
-            default standing pose so the robot returns to a safe idle position.
-            Set to False only when the user explicitly wants to hold a final pose.
+            default standing pose using a fullbody constraint that explicitly sets
+            both joint angles AND the expected final base position (destination for
+            locomotion, origin for in-place). Set to False only when the user
+            explicitly wants to hold a non-standing final pose (e.g. sitting,
+            kneeling, arms raised).
         move_direction: Locomotion direction for root position constraints. One of:
             "forward", "backward", "left", "right", "forward-left", "forward-right",
             "backward-left", "backward-right". Leave empty for in-place motions.
@@ -246,19 +375,37 @@ def generate_motion_impl(
 
     results = []
     for prompt, duration in zip(prompts, durations, strict=True):
-        root2d = (
-            _build_root2d_constraints(move_direction, move_distance, duration)
-            if has_locomotion
-            else None
-        )
-        use_final_dof = return_to_standing and not has_locomotion
+        all_constraints: list[dict] = []
+        num_frames = int(duration * KIMODO_FPS)
+        last_frame = max(num_frames - 1, 1)
+
+        if has_locomotion:
+            root2d = _build_root2d_constraints(move_direction, move_distance, duration)
+            if root2d:
+                all_constraints.extend(root2d)
+
+        if return_to_standing:
+            dir_key = move_direction.lower().strip()
+            vec = (
+                _DIRECTION_VECTORS.get(dir_key, (0.0, 0.0))
+                if has_locomotion
+                else (0.0, 0.0)
+            )
+            target_x = vec[0] * move_distance if has_locomotion else 0.0
+            target_y = vec[1] * move_distance if has_locomotion else 0.0
+            yaw = _DIRECTION_YAWS.get(dir_key, 0.0) if has_locomotion else 0.0
+            all_constraints.append(
+                _build_standing_fullbody_constraint(
+                    last_frame, target_x, target_y, yaw=yaw
+                )
+            )
+
         try:
             qpos_path, pt_path, _pt_bytes = _call_kimodo(
                 prompt,
                 duration,
                 diffusion_steps,
-                final_dof_pos=(DEFAULT_DOF_POS if use_final_dof else None),
-                constraints=root2d,
+                constraints=all_constraints or None,
             )
         except httpx.HTTPError:
             log.warning(

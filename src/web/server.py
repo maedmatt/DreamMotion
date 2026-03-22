@@ -33,12 +33,11 @@ from fastapi.staticfiles import StaticFiles
 from openai import OpenAI
 from pydantic import BaseModel
 
-from agent.prompt_refiner import refine_prompt
+from agent.tools.generate_motion import extract_motion_params, generate_motion_impl
 from web.agent_runner import run_agent_for_web
 
 logger = logging.getLogger(__name__)
 
-CANDIDATES_DIR = Path("output/candidates")
 CANDIDATE_SESSIONS: dict[str, dict] = {}
 
 # ---------------------------------------------------------------------------
@@ -214,6 +213,9 @@ class CandidateRequest(BaseModel):
     prompt: str
     num_samples: int = 3
     diffusion_steps: int = 50
+    return_to_standing: bool = True
+    move_direction: str = ""
+    move_distance: float = 0.5
 
 
 class SelectRequest(BaseModel):
@@ -223,113 +225,93 @@ class SelectRequest(BaseModel):
 
 @app.post("/api/generate-candidates")
 def api_generate_candidates(req: CandidateRequest):
-    """Generate multiple motion candidates for user selection."""
+    """Generate N motion candidates by calling the same pipeline N times."""
     prompt = req.prompt.strip()
     if not prompt:
         raise HTTPException(status_code=400, detail="Empty prompt")
 
-    refined = refine_prompt(prompt)
-    kimodo_prompt = refined["prompts"][0]
-    duration = refined["durations"][0]
+    move_direction = req.move_direction
+    move_distance = req.move_distance
+    if not move_direction:
+        move_direction, move_distance = extract_motion_params(prompt)
 
-    kimodo_url = os.environ.get("KIMODO_URL", "http://localhost:8420")
-    headers = {"ngrok-skip-browser-warning": "true"}
-    body = {
-        "prompt": kimodo_prompt,
-        "duration": duration,
-        "diffusion_steps": req.diffusion_steps,
-        "num_samples": req.num_samples,
-    }
+    candidates: list[dict] = []
+    first_prompt: str | None = None
+    first_duration: float | None = None
 
-    json_resp = httpx.post(
-        f"{kimodo_url}/generate", headers=headers, json=body, timeout=120.0
-    )
-    json_resp.raise_for_status()
-    data = json_resp.json()
-    samples = data["qpos"]
+    for _ in range(req.num_samples):
+        result = generate_motion_impl(
+            prompt,
+            diffusion_steps=req.diffusion_steps,
+            return_to_standing=req.return_to_standing,
+            move_direction=move_direction,
+            move_distance=move_distance,
+        )
+        for motion in result.get("motions") or []:
+            qpos_raw = motion.get("qpos_path")
+            if not isinstance(qpos_raw, str) or not qpos_raw:
+                continue
+            qpath = Path(qpos_raw)
+            if not qpath.exists():
+                continue
 
-    pt_resp = httpx.post(
-        f"{kimodo_url}/generate/pt", headers=headers, json=body, timeout=120.0
-    )
-    pt_resp.raise_for_status()
+            csv_text = _ensure_csv_header(qpath.read_text())
+            num_frames = max(len(csv_text.strip().splitlines()) - 1, 0)
+
+            task_id = str(time.time_ns())
+            GENERATED_MOTION_DATA[task_id] = {
+                "prompt": str(motion.get("prompt", prompt)),
+                "csv": csv_text,
+            }
+            candidates.append(
+                {
+                    "task_id": task_id,
+                    "viewer_url": f"/viewer/{task_id}",
+                    "num_frames": num_frames,
+                    "pt_path": motion.get("pt_path"),
+                }
+            )
+            if first_prompt is None:
+                first_prompt = str(motion.get("prompt", prompt))
+                first_duration = motion.get("duration")
 
     session_id = str(time.time_ns())
-    session_dir = CANDIDATES_DIR / session_id
-    session_dir.mkdir(parents=True, exist_ok=True)
-
-    pt_path = session_dir / "motions.pt"
-    pt_path.write_bytes(pt_resp.content)
-
-    csv_header = "root_x,root_y,root_z,quat_w,quat_x,quat_y,quat_z," + ",".join(
-        f"joint_{i}" for i in range(29)
-    )
-
-    candidate_tasks = []
-    for i, sample_qpos in enumerate(samples):
-        csv_lines = [csv_header]
-        for frame in sample_qpos:
-            csv_lines.append(",".join(str(v) for v in frame))
-        csv_text = "\n".join(csv_lines)
-
-        task_id = f"{session_id}_sample_{i}"
-        GENERATED_MOTION_DATA[task_id] = {
-            "prompt": kimodo_prompt,
-            "csv": csv_text,
-        }
-        candidate_tasks.append(
-            {
-                "task_id": task_id,
-                "viewer_url": f"/viewer/{task_id}",
-                "num_frames": len(sample_qpos),
-            }
-        )
-
     CANDIDATE_SESSIONS[session_id] = {
-        "pt_path": str(pt_path),
-        "num_samples": req.num_samples,
-        "prompt": kimodo_prompt,
-        "duration": duration,
+        "candidates": candidates,
+        "num_samples": len(candidates),
     }
 
     return {
         "session_id": session_id,
-        "prompt": kimodo_prompt,
-        "duration": duration,
-        "candidates": candidate_tasks,
-        "warning": refined.get("warning"),
+        "prompt": first_prompt or prompt,
+        "duration": first_duration,
+        "candidates": [
+            {
+                "task_id": c["task_id"],
+                "viewer_url": c["viewer_url"],
+                "num_frames": c["num_frames"],
+            }
+            for c in candidates
+        ],
     }
 
 
 @app.post("/api/select-candidate")
 def api_select_candidate(req: SelectRequest):
-    """Extract selected motion sample and save to output/ for deploy."""
-    import torch
+    """Copy the selected candidate's PT file to output/ for deploy."""
+    import shutil
 
     session = CANDIDATE_SESSIONS.get(req.session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    if req.sample_index < 0 or req.sample_index >= session["num_samples"]:
+
+    candidates = session.get("candidates", [])
+    if req.sample_index < 0 or req.sample_index >= len(candidates):
         raise HTTPException(status_code=400, detail="Invalid sample index")
 
-    pt_path = Path(session["pt_path"])
-    if not pt_path.exists():
+    pt_path_raw = candidates[req.sample_index].get("pt_path")
+    if not pt_path_raw or not Path(pt_path_raw).exists():
         raise HTTPException(status_code=404, detail="PT file not found")
-
-    lib = torch.load(str(pt_path), weights_only=False)
-    start = int(lib["length_starts"][req.sample_index])
-    nf = int(lib["motion_num_frames"][req.sample_index])
-
-    single = {}
-    for key in ("gts", "grs", "gavs", "gvs", "dvs", "dps", "contacts"):
-        single[key] = lib[key][start : start + nf]
-    single["motion_num_frames"] = torch.tensor([nf])
-    single["length_starts"] = torch.tensor([0])
-    single["motion_dt"] = lib["motion_dt"][:1]
-    single["motion_lengths"] = lib["motion_lengths"][
-        req.sample_index : req.sample_index + 1
-    ]
-    single["motion_weights"] = torch.ones(1)
-    single["motion_files"] = (f"selected_{req.session_id}",)
 
     output_dir = Path("output")
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -337,7 +319,7 @@ def api_select_candidate(req: SelectRequest):
 
     timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
     out_path = output_dir / f"qpos_{timestamp}.pt"
-    torch.save(single, str(out_path))
+    shutil.copy2(pt_path_raw, out_path)
 
     return {
         "status": "selected",
