@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css?v=6">
+  <link rel="stylesheet" href="/static/style.css?v=8">
 </head>
 <body>
   <div class="app-container">
@@ -81,6 +81,11 @@
         <p id="agent-reply-text"></p>
       </div>
 
+      <!-- Candidate selection (shown in selection mode) -->
+      <div class="candidates-container hidden" id="candidates-container">
+        <div class="candidates-grid" id="candidates-grid"></div>
+      </div>
+
       <!-- 3D Viewer -->
       <div class="viewer-container" id="viewer-container">
         <div id="viewer-overlay" class="viewer-overlay">
@@ -97,11 +102,6 @@
       <div class="pres-step" data-step="llm">
         <div class="pres-step-ring"><div class="pres-step-dot"></div></div>
         <span>Understand</span>
-      </div>
-      <div class="pres-step-line"></div>
-      <div class="pres-step" data-step="constrain">
-        <div class="pres-step-ring"><div class="pres-step-dot"></div></div>
-        <span>Constrain</span>
       </div>
       <div class="pres-step-line"></div>
       <div class="pres-step" data-step="kimodo">
@@ -151,6 +151,12 @@
       <p class="mode-description">Automatically speak the agent reply after generation.</p>
 
       <div class="settings-row settings-row-toggle">
+        <label for="selection-mode-toggle">Selection Mode (3 candidates)</label>
+        <input type="checkbox" id="selection-mode-toggle" />
+      </div>
+      <p class="mode-description">Generate 3 motion variations and pick your favorite.</p>
+
+      <div class="settings-row settings-row-toggle">
         <label for="presentation-mode-toggle">Presentation Mode</label>
         <input type="checkbox" id="presentation-mode-toggle" />
       </div>
@@ -158,6 +164,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=6"></script>
+  <script src="/static/app.js?v=8"></script>
 </body>
 </html>

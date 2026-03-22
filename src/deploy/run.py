@@ -81,6 +81,7 @@ def patch_mujoco_viewer_compat() -> None:
     """Accept RoboJuDo's viewer kwarg typo across mujoco_viewer versions."""
     try:
         import inspect
+
         import mujoco_viewer
     except Exception:
         logger.debug("Skipping mujoco_viewer compatibility patch", exc_info=True)
