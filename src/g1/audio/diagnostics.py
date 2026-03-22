@@ -34,7 +34,11 @@ def _make_tone_pcm_bytes(
     samples = array(
         "h",
         (
-            int(32767 * amplitude * math.sin(2.0 * math.pi * frequency_hz * i / sample_rate_hz))
+            int(
+                32767
+                * amplitude
+                * math.sin(2.0 * math.pi * frequency_hz * i / sample_rate_hz)
+            )
             for i in range(sample_count)
         ),
     )
@@ -62,7 +66,8 @@ def _play_tone(
     duration_seconds: float,
 ) -> None:
     print(
-        f"\nRaw tone test: {frequency_hz:.0f} Hz for {duration_seconds:.1f}s at {sample_rate_hz} Hz mono"
+        f"\nRaw tone test: {frequency_hz:.0f} Hz for "
+        f"{duration_seconds:.1f}s at {sample_rate_hz} Hz mono"
     )
     pcm_bytes = _make_tone_pcm_bytes(
         sample_rate_hz=sample_rate_hz,
@@ -100,7 +105,7 @@ def main() -> None:
     if not cfg.skip_tts:
         _queue_tts_test(
             service=service,
-            text="大家好，我是机器人。",
+            text="Hello everyone, I am a robot.",
             speaker_id=0,
             pause_seconds=cfg.pause_seconds,
         )
@@ -120,9 +125,18 @@ def main() -> None:
         )
 
     print("\nInterpretation:")
-    print("  - If you hear the raw tone but not the TTS lines, the speaker works and the issue is TTS/language/profile related.")
-    print("  - If you hear the Chinese TTS but not the English lines, English synthesis is the likely issue on this robot image.")
-    print("  - If you hear nothing at all, the issue is downstream of this repo: robot audio output, robot service state, or hardware.")
+    print(
+        "  - If you hear the raw tone but not the TTS lines,"
+        " the speaker works and the issue is TTS related."
+    )
+    print(
+        "  - If you hear Chinese TTS but not English,"
+        " English synthesis is the likely issue."
+    )
+    print(
+        "  - If you hear nothing at all, the issue is"
+        " downstream: audio output, service state, or hardware."
+    )
 
 
 if __name__ == "__main__":

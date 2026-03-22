@@ -440,8 +440,8 @@ def speak(req: SpeakRequest):
                 speaker_id=req.speaker_id,
                 voice=req.voice,
             )
-            if result.get('status') == 'failed':
-                raise RuntimeError(result.get('error') or 'Robot speaker failed')
+            if result.get("status") == "failed":
+                raise RuntimeError(result.get("error") or "Robot speaker failed")
             return {"status": "ok", "detail": result}
         except Exception as exc:
             logger.exception("Robot TTS failed")

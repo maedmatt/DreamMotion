@@ -4,7 +4,6 @@ import importlib.util
 import os
 import sys
 from pathlib import Path
-from typing import List
 
 
 def _candidate_build_dirs() -> list[Path]:
@@ -14,7 +13,9 @@ def _candidate_build_dirs() -> list[Path]:
         candidates.append(Path(env_dir))
 
     repo_root = Path(__file__).resolve().parents[2]
-    candidates.append(repo_root.parent / "RoboJuDo" / "packages" / "unitree_cpp" / "build")
+    candidates.append(
+        repo_root.parent / "RoboJuDo" / "packages" / "unitree_cpp" / "build"
+    )
     return candidates
 
 
@@ -27,8 +28,7 @@ def _find_extension() -> Path:
             return matches[0]
     searched = ", ".join(str(path) for path in _candidate_build_dirs())
     raise ModuleNotFoundError(
-        "Could not find the local unitree_cpp extension. "
-        f"Searched: {searched}"
+        f"Could not find the local unitree_cpp extension. Searched: {searched}"
     )
 
 
@@ -60,33 +60,33 @@ _SportState = _ext.SportState
 
 class MotorState(_MotorState):
     @property
-    def q(self) -> List[float]:
+    def q(self) -> list[float]:
         return super().q
 
     @property
-    def dq(self) -> List[float]:
+    def dq(self) -> list[float]:
         return super().dq
 
     @property
-    def tau_est(self) -> List[float]:
+    def tau_est(self) -> list[float]:
         return super().tau_est
 
 
 class ImuState(_ImuState):
     @property
-    def rpy(self) -> List[float]:
+    def rpy(self) -> list[float]:
         return super().rpy
 
     @property
-    def quaternion(self) -> List[float]:
+    def quaternion(self) -> list[float]:
         return super().quaternion
 
     @property
-    def gyroscope(self) -> List[float]:
+    def gyroscope(self) -> list[float]:
         return super().gyroscope
 
     @property
-    def accelerometer(self) -> List[float]:
+    def accelerometer(self) -> list[float]:
         return super().accelerometer
 
 
@@ -106,9 +106,9 @@ class RobotState(_RobotState):
 
 class SportState(_SportState):
     @property
-    def position(self) -> List[float]:
+    def position(self) -> list[float]:
         return super().position
 
     @property
-    def velocity(self) -> List[float]:
+    def velocity(self) -> list[float]:
         return super().velocity

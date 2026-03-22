@@ -147,14 +147,13 @@ def run_agent_for_web(
 
     if state.spoken_text and (
         state.speech is None
-        or (
-            state.tts_target == "robot"
-            and state.speech.get("status") == "not_called"
-        )
+        or (state.tts_target == "robot" and state.speech.get("status") == "not_called")
     ):
         if state.tts_target == "robot":
             state.speech = {
-                **say_text_impl(state.spoken_text, speaker_id=state.speaker_id, voice=default_voice),
+                **say_text_impl(
+                    state.spoken_text, speaker_id=state.speaker_id, voice=default_voice
+                ),
                 "target": "robot",
                 "handled": True,
                 "fallback": True,
