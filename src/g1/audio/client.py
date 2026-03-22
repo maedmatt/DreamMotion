@@ -3,19 +3,26 @@ from __future__ import annotations
 import audioop
 import importlib
 import io
+import logging
 import os
+import socket
 import time
 import wave
 from dataclasses import dataclass
 from functools import lru_cache
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
 class UnitreeAudioConfig:
-    network_interface: str
+    network_interface: str | None
     timeout_seconds: float
+    interface_source: str
+    available_interfaces: tuple[str, ...]
+    resolution_notes: tuple[str, ...] = ()
 
 
 def _load_unitree_sdk() -> tuple:  # pyright: ignore[reportMissingTypeArgument]
@@ -33,17 +40,70 @@ def _load_unitree_sdk() -> tuple:  # pyright: ignore[reportMissingTypeArgument]
     return channel_module, audio_module
 
 
+def _normalize_interface_name(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _list_available_interfaces() -> tuple[str, ...]:
+    try:
+        return tuple(name for _, name in socket.if_nameindex())
+    except OSError:
+        return ()
+
+
+def _resolve_network_interface() -> tuple[
+    str | None,
+    str,
+    tuple[str, ...],
+    tuple[str, ...],
+]:
+    available_interfaces = _list_available_interfaces()
+    configured_env = _normalize_interface_name(os.environ.get("UNITREE_NETWORK_INTERFACE"))
+    configured_dotenv = _normalize_interface_name(
+        dotenv_values().get("UNITREE_NETWORK_INTERFACE")
+    )
+    notes: list[str] = []
+
+    def is_available(interface_name: str | None) -> bool:
+        return bool(interface_name) and (
+            not available_interfaces or interface_name in available_interfaces
+        )
+
+    if configured_env and is_available(configured_env):
+        return configured_env, "environment", available_interfaces, tuple(notes)
+
+    if configured_env and available_interfaces:
+        notes.append(
+            "Ignoring stale UNITREE_NETWORK_INTERFACE=%r from the process "
+            "environment because it is not available on this host. Available "
+            "interfaces: %s."
+            % (configured_env, ", ".join(available_interfaces))
+        )
+
+    if configured_dotenv and is_available(configured_dotenv):
+        return configured_dotenv, ".env", available_interfaces, tuple(notes)
+
+    if configured_dotenv and available_interfaces:
+        notes.append(
+            "Configured UNITREE_NETWORK_INTERFACE=%r from .env is not available "
+            "on this host. Available interfaces: %s."
+            % (configured_dotenv, ", ".join(available_interfaces))
+        )
+
+    return None, "autodetect", available_interfaces, tuple(notes)
+
+
 def _load_config() -> UnitreeAudioConfig:
     # Keep robot TTS usable from any entrypoint, not only scripts that already
     # loaded the repository's .env file.
     load_dotenv()
 
-    network_interface = os.environ.get("UNITREE_NETWORK_INTERFACE")
-    if not network_interface:
-        raise RuntimeError(
-            "Set UNITREE_NETWORK_INTERFACE to the robot-facing network interface "
-            "before using the audio tool, for example `eth0`."
-        )
+    network_interface, interface_source, available_interfaces, resolution_notes = (
+        _resolve_network_interface()
+    )
 
     timeout_raw = os.environ.get("UNITREE_AUDIO_TIMEOUT", "10.0")
     try:
@@ -54,14 +114,65 @@ def _load_config() -> UnitreeAudioConfig:
     return UnitreeAudioConfig(
         network_interface=network_interface,
         timeout_seconds=timeout_seconds,
+        interface_source=interface_source,
+        available_interfaces=available_interfaces,
+        resolution_notes=resolution_notes,
     )
+
+
+def _init_channel_factory(
+    channel_module: object,
+    config: UnitreeAudioConfig,
+) -> None:
+    for note in config.resolution_notes:
+        log.warning("%s", note)
+
+    available = ", ".join(config.available_interfaces) or "unknown"
+
+    if config.network_interface:
+        try:
+            channel_module.ChannelFactoryInitialize(0, config.network_interface)  # pyright: ignore[reportAttributeAccessIssue]
+            return
+        except Exception:
+            log.warning(
+                "Unitree DDS init failed on interface %r from %s; retrying with "
+                "autodetect. Available interfaces: %s.",
+                config.network_interface,
+                config.interface_source,
+                available,
+                exc_info=True,
+            )
+            try:
+                channel_module.ChannelFactoryInitialize(0, None)  # pyright: ignore[reportAttributeAccessIssue]
+                log.info(
+                    "Unitree DDS initialized with autodetected interface after "
+                    "explicit init failed."
+                )
+                return
+            except Exception as fallback_exc:
+                raise RuntimeError(
+                    "Failed to initialize Unitree DDS using interface "
+                    f"{config.network_interface!r} from {config.interface_source}, "
+                    "and autodetect also failed. Available interfaces: "
+                    f"{available}."
+                ) from fallback_exc
+
+    try:
+        channel_module.ChannelFactoryInitialize(0, None)  # pyright: ignore[reportAttributeAccessIssue]
+        log.info("Unitree DDS initialized with autodetected network interface.")
+    except Exception as exc:
+        raise RuntimeError(
+            "Failed to initialize Unitree DDS with autodetect. Set "
+            "UNITREE_NETWORK_INTERFACE to a valid robot-facing interface. "
+            f"Available interfaces: {available}."
+        ) from exc
 
 
 class UnitreeAudioService:
     def __init__(self, config: UnitreeAudioConfig) -> None:
         channel_module, audio_module = _load_unitree_sdk()
 
-        channel_module.ChannelFactoryInitialize(0, config.network_interface)  # pyright: ignore[reportAttributeAccessIssue]
+        _init_channel_factory(channel_module, config)
 
         client = audio_module.AudioClient()  # pyright: ignore[reportAttributeAccessIssue]
         client.SetTimeout(config.timeout_seconds)
