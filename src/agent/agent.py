@@ -12,6 +12,24 @@ from strands.models.openai import OpenAIModel
 from agent.tools.generate_motion import generate_motion
 
 SYSTEM_PROMPT = dedent("""
+    You are a motion planner for the Unitree G1 humanoid robot.
+
+    When the user describes a motion, pose, or action, call generate_motion
+    with the user's description exactly as stated — the tool handles prompt
+    optimization internally. The tool may return multiple motion clips if the
+    description involves a sequence.
+
+    Summarize results naturally: how many motions, what they are, total
+    duration. If a warning is returned, relay it clearly.
+
+    If a tool fails, explain the error in plain language and suggest
+    alternatives. Do not expose raw file paths or status codes.
+
+    Call generate_motion exactly once per user request. Do not call it
+    multiple times unless the user explicitly asks for variations.
+""").strip()
+
+SYSTEM_PROMPT_WITH_TTS = dedent("""
     You are a motion planner and speech assistant for the Unitree G1 humanoid robot.
 
     You have two tools:
@@ -42,6 +60,9 @@ SYSTEM_PROMPT = dedent("""
     that description whenever it is plausible.
 
     Skip motion only when no sensible physical behavior fits the request.
+
+    Report the resulting motion details, warnings, and spoken lines back to
+    the user. If a warning is returned, relay it to the user.
 """).strip()
 
 
@@ -51,5 +72,10 @@ def create_agent(
     model_id: str = "gpt-4.1",
 ) -> Agent:
     model = OpenAIModel(model_id=model_id)
-    resolved_tools = list(tools) if tools is not None else [generate_motion]
-    return Agent(model=model, system_prompt=SYSTEM_PROMPT, tools=resolved_tools)
+    if tools is not None:
+        resolved_tools = list(tools)
+        prompt = SYSTEM_PROMPT_WITH_TTS
+    else:
+        resolved_tools = [generate_motion]
+        prompt = SYSTEM_PROMPT
+    return Agent(model=model, system_prompt=prompt, tools=resolved_tools)

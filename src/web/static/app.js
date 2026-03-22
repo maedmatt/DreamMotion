@@ -48,6 +48,57 @@ document.addEventListener('DOMContentLoaded', () => {
   const input = document.getElementById('prompt-input');
   const statusMsg = document.getElementById('status-message');
   const refinedText = document.getElementById('refined-prompt-text');
+  const chatArea = document.getElementById('chat-area');
+
+  function addUserBubble(text) {
+    const row = document.createElement('div');
+    row.className = 'chat-row user';
+    row.innerHTML = `<div class="chat-bubble">${escapeHtml(text)}</div><div class="chat-avatar">🦊</div>`;
+    chatArea.appendChild(row);
+    chatArea.scrollTop = chatArea.scrollHeight;
+  }
+
+  function addBotBubble(text, spokenText, toolInfo) {
+    removeTypingIndicator();
+    const row = document.createElement('div');
+    row.className = 'chat-row bot';
+    const speakBtn = spokenText ? `<button class="speak-inline-btn" onclick="window._speakText('${escapeHtml(spokenText).replace(/'/g, "\\'")}')"><svg viewBox="0 0 24 24" fill="none" width="18" height="18"><path d="M3 9v6h4l5 5V4L7 9H3z" fill="currentColor"/><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z" fill="currentColor"/><path d="M19 12c0 2.97-1.65 5.54-4 6.71v2.06c3.45-1.27 6-4.64 6-8.77s-2.55-7.5-6-8.77v2.06c2.35 1.17 4 3.74 4 6.71z" fill="currentColor"/></svg></button>` : '';
+
+    let toolsHtml = '';
+    if (toolInfo && toolInfo.length > 0) {
+      const items = toolInfo.map(t => {
+        const icon = t.name === 'generate_motion' ? '🦾' : '🗣️';
+        const detail = t.duration ? `${escapeHtml(t.detail)} (${t.duration})` : escapeHtml(t.detail);
+        return `<div class="tool-pill">${icon} <span class="tool-name">${escapeHtml(t.name)}</span> <span class="tool-detail">${detail}</span></div>`;
+      }).join('');
+      toolsHtml = `<div class="tool-activity">${items}</div>`;
+    }
+
+    row.innerHTML = `<div class="chat-avatar">🤖</div><div class="chat-bubble">${escapeHtml(text)}${speakBtn}${toolsHtml}</div>`;
+    chatArea.appendChild(row);
+    chatArea.scrollTop = chatArea.scrollHeight;
+  }
+
+  function addTypingIndicator() {
+    removeTypingIndicator();
+    const row = document.createElement('div');
+    row.className = 'chat-typing';
+    row.id = 'typing-indicator';
+    row.innerHTML = `<div class="chat-avatar">🤖</div><div class="typing-dots"><span></span><span></span><span></span></div>`;
+    chatArea.appendChild(row);
+    chatArea.scrollTop = chatArea.scrollHeight;
+  }
+
+  function removeTypingIndicator() {
+    const el = document.getElementById('typing-indicator');
+    if (el) el.remove();
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
   const spinner = document.getElementById('loading-spinner');
   const viewerContainer = document.getElementById('viewer-container');
   const actionBar = document.getElementById('action-bar');
@@ -99,18 +150,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function showStatusMessage(text) {
     if (isPresentationMode) return;
-    statusMsg.classList.remove('hidden');
+    // Keep status hidden — info goes into chat bubbles
     refinedText.textContent = text;
   }
 
   function showAgentReply(text) {
+    // Hidden — reply shown in chat bubble instead
     if (!text) return;
-    agentReply.classList.remove('hidden');
     agentReplyText.textContent = text;
   }
 
   function hideAgentReply() {
-    agentReply.classList.add('hidden');
     agentReplyText.textContent = '';
     stopSpeaking();
   }
@@ -130,6 +180,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     setSpeakingState(false);
   }
+
+  window._speakText = (text) => void speakText(text);
 
   async function speakText(text) {
     if (!text) return;
@@ -718,6 +770,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!prompt) return;
     if (isRecording) stopRecording();
 
+    // Chat bubbles
+    addUserBubble(prompt);
+    addTypingIndicator();
+    input.value = '';
+
     // Reset UI
     hideAgentReply();
     if (!isPresentationMode) {
@@ -773,12 +830,26 @@ document.addEventListener('DOMContentLoaded', () => {
         narrateKimodo();
       }
 
-      const replyText = (data.text_reply || data.spoken_text || '').trim();
-      if (replyText) {
-        showAgentReply(replyText);
+      const spokenText = (data.spoken_text || '').trim();
+      const replyText = (data.text_reply || spokenText || '').trim();
+
+      // Build tool activity info
+      const toolInfo = [];
+      if (data.prompts && data.prompts.length > 0) {
+        toolInfo.push({name: 'generate_motion', detail: data.prompts[0], duration: data.durations ? data.durations[0] + 's' : ''});
+      }
+      if (spokenText) {
+        toolInfo.push({name: 'say_text', detail: spokenText});
+      }
+
+      // Chat bubble shows only spoken text (what the robot says)
+      const bubbleText = spokenText || replyText;
+      if (bubbleText) {
+        addBotBubble(bubbleText, spokenText, toolInfo);
+        agentReplyText.textContent = replyText;
         const shouldAutoSpeak = autoSpeak && (!data.speech || data.speech.target === 'web');
         if (shouldAutoSpeak) {
-          void speakText(data.spoken_text || replyText);
+          void speakText(spokenText || replyText);
         }
       }
 
@@ -792,6 +863,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
     } catch (err) {
+      removeTypingIndicator();
+      addBotBubble('Sorry, something went wrong. Please try again.');
       spinner.classList.add('hidden');
       if (!isPresentationMode) {
         refinedText.textContent = (err && err.message) ? err.message : 'Error running agent.';

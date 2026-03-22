@@ -6,6 +6,193 @@
   --accent-hover: #0077ed;
   --card-bg: rgba(255, 255, 255, 0.7);
   --border-color: rgba(0, 0, 0, 0.1);
+  --user-bubble: #0071e3;
+  --bot-bubble: #e9e9eb;
+}
+
+/* ── Logo header ── */
+.logo-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+.hack-logo {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  object-fit: cover;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+}
+.logo-text {
+  text-align: left;
+}
+.logo-text h1 {
+  margin: 0 0 2px 0;
+  font-size: 26px;
+}
+.hack-badge {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-color);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+/* ── Chat container (messages + input) ── */
+.chat-container {
+  width: 100%;
+  max-width: 780px;
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* ── Chat area ── */
+.chat-area {
+  width: 100%;
+  max-height: 200px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 20px 8px 20px;
+  scroll-behavior: smooth;
+}
+.chat-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.chat-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+.robot-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+.chat-bubble {
+  padding: 10px 16px;
+  border-radius: 18px;
+  max-width: 70%;
+  font-size: 14px;
+  line-height: 1.5;
+  word-wrap: break-word;
+}
+.chat-row.user .chat-bubble {
+  background: var(--user-bubble);
+  color: white;
+  border-bottom-right-radius: 4px;
+  margin-left: auto;
+  margin-right: 4px;
+}
+.chat-row.bot .chat-bubble {
+  background: var(--bot-bubble);
+  color: var(--text-primary);
+  border-bottom-left-radius: 4px;
+}
+.chat-row.bot .chat-bubble .speak-inline-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  margin-left: 6px;
+  color: var(--text-secondary);
+  font-size: 16px;
+  vertical-align: middle;
+}
+.chat-row.bot .chat-bubble .speak-inline-btn:hover {
+  color: var(--accent-color);
+}
+.chat-typing {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+.typing-dots {
+  background: var(--bot-bubble);
+  padding: 12px 18px;
+  border-radius: 18px 18px 18px 4px;
+  display: flex;
+  gap: 4px;
+}
+.typing-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  animation: typing-bounce 1.4s infinite ease-in-out;
+}
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes typing-bounce {
+  0%, 80%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-6px); }
+}
+
+/* ── Tool activity pills ── */
+.tool-activity {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(0,0,0,0.08);
+}
+.tool-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: rgba(0,0,0,0.05);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.tool-name {
+  font-weight: 600;
+  font-family: 'SF Mono', 'Menlo', monospace;
+  font-size: 10px;
+}
+.tool-detail {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Chat input bar (inside chat container) ── */
+.chat-input-bar {
+  width: 100%;
+  padding: 8px 16px 12px;
+  box-sizing: border-box;
+}
+.chat-container .search-container {
+  width: 100%;
+  box-sizing: border-box;
+  border: none;
+  box-shadow: none;
+  border-radius: 16px;
+}
+.chat-container .search-container:focus-within {
+  box-shadow: 0 8px 32px rgba(0, 113, 227, 0.15);
 }
 
 body {
@@ -110,9 +297,10 @@ h1 {
   color: white;
   border: none;
   border-radius: 50%;
-  width: 40px;
-  height: 40px;
-  margin-right: 8px;
+  width: 34px;
+  height: 34px;
+  margin-right: 10px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -125,9 +313,10 @@ h1 {
   color: var(--text-secondary);
   border: 1px solid var(--border-color);
   border-radius: 50%;
-  width: 40px;
-  height: 40px;
-  margin-right: 8px;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  margin-right: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
