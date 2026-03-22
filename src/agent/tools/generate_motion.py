@@ -261,14 +261,13 @@ def generate_motion_impl(
         )
 
     has_locomotion = bool(move_direction and move_direction.strip())
-    if has_locomotion and resolved_final_root_pos is None:
-        if resolved_initial_root_pos is None:
-            resolved_initial_root_pos = [0.0, 0.0, DEFAULT_ROOT_HEIGHT]
-        resolved_final_root_pos = _compute_final_root_pos(
-            move_direction,
-            move_distance,
-        )
-        if resolved_final_root_pos is not None:
+    initial_root: list[float] | None = None
+    final_root: list[float] | None = None
+
+    if has_locomotion:
+        initial_root = [0.0, 0.0, DEFAULT_ROOT_HEIGHT]
+        final_root = _compute_final_root_pos(move_direction, move_distance)
+        if final_root:
             constraints_applied.append(
                 f"locomotion:{move_direction.strip()}:{move_distance:.1f}m"
             )
@@ -288,17 +287,9 @@ def generate_motion_impl(
                 prompt,
                 duration,
                 diffusion_steps,
-                initial_dof_pos=resolved_initial_dof_pos,
-                final_dof_pos=resolved_final_dof_pos,
-                initial_root_pos=resolved_initial_root_pos,
-                initial_root_quat=resolved_initial_root_quat,
-                final_root_pos=resolved_final_root_pos,
-                final_root_quat=resolved_final_root_quat,
-                num_samples=num_samples,
-                num_transition_frames=num_transition_frames,
-                cfg_type=cfg_type,
-                cfg_weight=cfg_weight,
-                constraints=constraints,
+                final_dof_pos=DEFAULT_DOF_POS if return_to_standing else None,
+                initial_root_pos=initial_root,
+                final_root_pos=final_root,
             )
         except httpx.HTTPError:
             log.warning("Kimodo call failed for prompt: %s", prompt, exc_info=True)
