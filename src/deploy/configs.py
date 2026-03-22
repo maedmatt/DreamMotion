@@ -60,7 +60,7 @@ class g1_agent_locomimic_real(g1_agent_locomimic):
 
     env: G1RealEnvCfg = G1RealEnvCfg(
         unitree=G1UnitreeCfg(
-            net_if="enx806d97161839",
+            net_if="enx806d97162a37",
         ),
         born_place_align=False,
     )

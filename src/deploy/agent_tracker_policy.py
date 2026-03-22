@@ -24,7 +24,7 @@ from robojudo.utils.rotation import TransformAlignment
 logger = logging.getLogger(__name__)
 
 # ── Toggle this to enable/disable blend edges ──
-BLEND_ENABLED = True
+BLEND_ENABLED = False
 BLEND_DURATION_S = 0.5
 
 # fmt: off

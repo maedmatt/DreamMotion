@@ -41,9 +41,6 @@ SYSTEM_PROMPT = dedent("""
     that description whenever it is plausible.
 
     Skip motion only when no sensible physical behavior fits the request.
-
-    Report the resulting file paths, motion details, warnings, and spoken lines
-    back to the user. If a warning is returned, relay it to the user.
 """).strip()
 
 

@@ -25,6 +25,13 @@ DEFAULT_DOF_POS = [
 ]
 # fmt: on
 
+# Default root: standing at origin, Z-up (MuJoCo convention)
+DEFAULT_ROOT_HEIGHT = 0.75
+INITIAL_ROOT_POS = [0.0, 0.0, DEFAULT_ROOT_HEIGHT]
+FINAL_ROOT_POS = [2.0, 0.0, DEFAULT_ROOT_HEIGHT]
+DEFAULT_ROOT_QUAT = [1.0, 0.0, 0.0, 0.0]  # identity wxyz
+
+
 
 def _kimodo_url() -> str:
     return os.environ.get("KIMODO_URL", "http://localhost:8420")
@@ -39,11 +46,19 @@ def _call_kimodo(
     diffusion_steps: int,
     initial_dof_pos: list[float] | None = None,
     final_dof_pos: list[float] | None = None,
+    initial_root_pos: list[float] | None = None,
+    initial_root_quat: list[float] | None = None,
+    final_root_pos: list[float] | None = None,
+    final_root_quat: list[float] | None = None,
     num_samples: int = 1,
     num_transition_frames: int = 5,
     constraints: list[dict] | None = None,
-) -> tuple[Path, Path | None]:
-    """Call Kimodo API and save results as CSV and .pt."""
+) -> tuple[Path, Path | None, bytes | None]:
+    """Call Kimodo API and save results as CSV and .pt.
+
+    Root position is MuJoCo [x,y,z] (Z-up). Root quaternion is [w,x,y,z].
+    The server converts these to Kimodo's Y-up coordinate system internally.
+    """
     body: dict = {
         "prompt": prompt,
         "duration": duration,
@@ -53,6 +68,14 @@ def _call_kimodo(
         body["initial_dof_pos"] = initial_dof_pos
     if final_dof_pos is not None:
         body["final_dof_pos"] = final_dof_pos
+    if initial_root_pos is not None:
+        body["initial_root_pos"] = initial_root_pos
+    if initial_root_quat is not None:
+        body["initial_root_quat"] = initial_root_quat
+    if final_root_pos is not None:
+        body["final_root_pos"] = final_root_pos
+    if final_root_quat is not None:
+        body["final_root_quat"] = final_root_quat
     if num_samples != 1:
         body["num_samples"] = num_samples
     if num_transition_frames != 5:
@@ -64,7 +87,7 @@ def _call_kimodo(
     timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
     url = _kimodo_url()
 
-    # CSV endpoint -> human-readable qpos record
+    # CSV endpoint → human-readable qpos record
     csv_response = httpx.post(
         f"{url}/generate/csv",
         headers=KIMODO_HEADERS,
@@ -75,8 +98,9 @@ def _call_kimodo(
     csv_path = OUTPUT_DIR / f"qpos_{timestamp}.csv"
     csv_path.write_bytes(csv_response.content)
 
-    # PT endpoint -> MotionLib tensor for deploy pipeline (best-effort)
+    # PT endpoint → MotionLib tensor for sim and ZMQ (best-effort)
     pt_path = None
+    pt_bytes = None
     try:
         pt_response = httpx.post(
             f"{url}/generate/pt",
@@ -85,12 +109,13 @@ def _call_kimodo(
             timeout=120.0,
         )
         pt_response.raise_for_status()
+        pt_bytes = pt_response.content
         pt_path = OUTPUT_DIR / f"qpos_{timestamp}.pt"
-        pt_path.write_bytes(pt_response.content)
+        pt_path.write_bytes(pt_bytes)
     except httpx.HTTPError:
         log.warning("Failed to fetch .pt from Kimodo, skipping")
 
-    return csv_path, pt_path
+    return csv_path, pt_path, pt_bytes
 
 
 @tool
@@ -125,12 +150,16 @@ def generate_motion_impl(description: str, diffusion_steps: int = 50) -> dict:
     results = []
     for prompt, duration in zip(prompts, durations, strict=True):
         try:
-            qpos_path, pt_path = _call_kimodo(
+          qpos_path, pt_path, pt_bytes = _call_kimodo(
                 prompt,
                 duration,
                 diffusion_steps,
-                # initial_dof_pos=DEFAULT_DOF_POS,
-                # final_dof_pos=DEFAULT_DOF_POS,
+                initial_dof_pos=DEFAULT_DOF_POS,
+                final_dof_pos=DEFAULT_DOF_POS,
+                initial_root_pos=INITIAL_ROOT_POS,
+                initial_root_quat=DEFAULT_ROOT_QUAT,
+                final_root_pos=FINAL_ROOT_POS,
+                final_root_quat=DEFAULT_ROOT_QUAT,
             )
         except httpx.HTTPError:
             log.warning("Kimodo call failed for prompt: %s", prompt, exc_info=True)
