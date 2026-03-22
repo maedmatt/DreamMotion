@@ -11,6 +11,9 @@ dependencies = [
     "tyro",
     "fastapi",
     "uvicorn",
+    "depthai",
+    "ultralytics",
+    "supervision",
 ]
 
 [project.scripts]

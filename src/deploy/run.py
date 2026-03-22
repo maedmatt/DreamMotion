@@ -18,6 +18,12 @@ from __future__ import annotations
 import inspect
 import os
 import platform
+import sys
+from pathlib import Path
+
+_SRC_DIR = Path(__file__).resolve().parents[1]
+if str(_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_SRC_DIR))
 
 if platform.machine().startswith("aarch64"):
     os.environ["OMP_NUM_THREADS"] = "1"
@@ -26,8 +32,6 @@ import logging
 import time
 from dataclasses import dataclass
 from functools import wraps
-from pathlib import Path
-
 import numpy as np
 import tyro
 
