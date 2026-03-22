@@ -25,6 +25,13 @@ KIMODO_URL = os.environ.get("KIMODO_URL", "http://localhost:8420")
 
 _MAX_RETRIES_PER_STATE = 3
 
+# Walk-to is open-loop, so we keep the first approach conservative, then allow
+# one short corrective move if the close-range recheck still says we are far.
+_WALK_TO_STOP_SHORT_M = 0.2
+_DEFAULT_STOP_SHORT_M = 0.5
+_WALK_TO_CONFIRM_DISTANCE_M = 0.3
+_MAX_MOVE_PASSES = 2
+
 # Kimodo prompt and target field per action type.
 _ACT_CONFIG: dict[str, tuple[str, str]] = {
     "step_on": (
@@ -73,6 +80,7 @@ class TreasureHuntStateMachine:
 
         # State shared between handlers
         self._target_local_xyz: np.ndarray | None = None
+        self._move_passes = 0
 
     def _stabilize(self) -> None:
         stabilize_for_vision(velocity_func=None)
@@ -228,7 +236,13 @@ class TreasureHuntStateMachine:
         by = float(self._target_local_xyz[1])
         distance = math.sqrt(bx * bx + by * by)
         yaw = math.atan2(by, bx)
-        walk_dist = max(0.0, distance - 0.5)  # stop 0.5m short
+        stop_short_m = (
+            _WALK_TO_STOP_SHORT_M
+            if self._action == "walk_to"
+            else _DEFAULT_STOP_SHORT_M
+        )
+        walk_dist = max(0.0, distance - stop_short_m)
+        self._move_passes += 1
         self._sdk.walk_forward_distance(walk_dist, yaw_rad=yaw)
 
         self._stabilize()
@@ -292,6 +306,21 @@ class TreasureHuntStateMachine:
         }
 
         if self._action == "walk_to":
+            close_distance = math.sqrt(
+                float(local_xyz[0]) * float(local_xyz[0])
+                + float(local_xyz[1]) * float(local_xyz[1])
+            )
+            if (
+                close_distance > _WALK_TO_CONFIRM_DISTANCE_M
+                and self._move_passes < _MAX_MOVE_PASSES
+            ):
+                self._say("Still a little far. Taking one more small step.")
+                return StateResult(
+                    status="ok",
+                    next_state=State.MOVE,
+                    payload=detection_payload,
+                )
+
             self._say(f"Arrived near the {self._target}. Target confirmed.")
             return StateResult(
                 status="ok", next_state=State.DONE, payload=detection_payload

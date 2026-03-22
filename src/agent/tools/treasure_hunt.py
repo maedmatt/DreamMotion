@@ -15,7 +15,7 @@ def _make_say_callback() -> object:
         from g1.audio.client import get_unitree_audio_service
 
         svc = get_unitree_audio_service()
-        return lambda text: svc.say_text(text=text, speaker_id=0)
+        return lambda text: svc.say_text(text=text, speaker_id=1)
     except Exception:
         return lambda text: print(f"[SAY] {text}")
 
