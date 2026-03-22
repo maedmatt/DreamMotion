@@ -11,11 +11,39 @@ from strands.models.openai import OpenAIModel
 
 from agent.tools.generate_motion import generate_motion
 
-SYSTEM_PROMPT = dedent("""
+_CONSTRAINT_SECTION = """
+    ## Motion constraints
+
+    generate_motion has two constraint mechanisms you should use:
+
+    ### Return to standing (return_to_standing)
+    By default return_to_standing=True, which makes the robot end every motion
+    in its neutral standing pose. This is the safe behavior - the robot stays
+    stable between motions. Only set return_to_standing=False when the user
+    explicitly wants to hold a final pose (e.g. "stay like that", "freeze",
+    "keep your arms raised").
+
+    ### Locomotion waypoints (move_direction + move_distance)
+    When the user asks the robot to move through space - walk, run, step, go
+    in a direction - set move_direction to one of: "forward", "backward",
+    "left", "right", "forward-left", "forward-right", "backward-left",
+    "backward-right".
+
+    Keep distances conservative to avoid overshooting:
+    - Default: 0.5 m total. Good for general "walk forward" / "go left".
+    - Small movement ("take a step", "move a little"): 0.2-0.3 m.
+    - If the user states an exact distance, use it.
+
+    Do NOT set move_direction for in-place actions (wave, nod, dance, gesture).
+    Only use it when locomotion through space is the core intent.
+"""
+
+SYSTEM_PROMPT = dedent(
+    """
     You are a motion planner for the Unitree G1 humanoid robot.
 
     When the user describes a motion, pose, or action, call generate_motion
-    with the user's description exactly as stated — the tool handles prompt
+    with the user's description exactly as stated - the tool handles prompt
     optimization internally. The tool may return multiple motion clips if the
     description involves a sequence.
 
@@ -27,9 +55,12 @@ SYSTEM_PROMPT = dedent("""
 
     Call generate_motion exactly once per user request. Do not call it
     multiple times unless the user explicitly asks for variations.
-""").strip()
+"""
+    + _CONSTRAINT_SECTION
+).strip()
 
-SYSTEM_PROMPT_WITH_TTS = dedent("""
+SYSTEM_PROMPT_WITH_TTS = dedent(
+    """
     You are a motion planner and speech assistant for the Unitree G1 humanoid robot.
 
     You have two tools:
@@ -52,7 +83,7 @@ SYSTEM_PROMPT_WITH_TTS = dedent("""
     wave, point, shrug, stance change, or short locomotion.
 
     If the user explicitly describes a motion, pose, or action, call
-    generate_motion with the user's description exactly as stated — the tool
+    generate_motion with the user's description exactly as stated - the tool
     handles prompt optimization internally.
 
     If the user does not explicitly describe a motion, invent a short, natural
@@ -63,7 +94,9 @@ SYSTEM_PROMPT_WITH_TTS = dedent("""
 
     Report the resulting motion details, warnings, and spoken lines back to
     the user. If a warning is returned, relay it to the user.
-""").strip()
+"""
+    + _CONSTRAINT_SECTION
+).strip()
 
 
 def create_agent(

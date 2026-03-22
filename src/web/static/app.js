@@ -36,6 +36,11 @@ const PRESENTATION_STEP_LINES = {
     'Refining language into motion prompt',
     'Preparing the command',
   ],
+  constrain: [
+    'Applying motion constraints',
+    'Setting waypoints and pose targets',
+    'Configuring physical boundaries',
+  ],
   kimodo: [
     'Generating movement',
     'Building trajectory',
@@ -112,7 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const presentationThoughtsEl = document.getElementById('presentation-thoughts');
   const presTextArea = document.getElementById('pres-text-area');
   const presStepsEl = document.getElementById('pres-steps');
-  const STEP_ORDER = ['llm', 'kimodo'];
+  const STEP_ORDER = ['llm', 'constrain', 'kimodo'];
   const agentReply = document.getElementById('agent-reply');
   const agentReplyText = document.getElementById('agent-reply-text');
   const speakBtn = document.getElementById('speak-btn');
@@ -152,6 +157,39 @@ document.addEventListener('DOMContentLoaded', () => {
     if (isPresentationMode) return;
     // Keep status hidden — info goes into chat bubbles
     refinedText.textContent = text;
+  }
+
+  function formatConstraintLabel(tag) {
+    if (tag === 'return_to_standing') return 'Return to Standing';
+    if (tag.startsWith('locomotion:')) {
+      const parts = tag.split(':');
+      const dir = (parts[1] || '').replace(/-/g, ' ');
+      const dist = parts[2] || '';
+      return 'Locomotion \u2022 ' + dir + ' ' + dist;
+    }
+    return tag;
+  }
+
+  function showConstraintTags(tags) {
+    let container = document.getElementById('constraint-tags');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'constraint-tags';
+      container.className = 'constraint-tags';
+      statusMsg.appendChild(container);
+    }
+    container.innerHTML = '';
+    for (const tag of tags) {
+      const el = document.createElement('span');
+      el.className = 'constraint-tag';
+      el.textContent = formatConstraintLabel(tag);
+      container.appendChild(el);
+    }
+  }
+
+  function clearConstraintTags() {
+    const container = document.getElementById('constraint-tags');
+    if (container) container.innerHTML = '';
   }
 
   function showAgentReply(text) {
@@ -787,17 +825,27 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     actionBar.classList.add('hidden');
 
+    let constrainNarrated = false;
     let kimodoNarrated = false;
+    let constrainTimer = null;
     let kimodoTimer = null;
+    const narrateConstrain = () => {
+      if (constrainNarrated || !isPresentationMode) return;
+      constrainNarrated = true;
+      pushPresentationLine('constrain');
+    };
     const narrateKimodo = () => {
       if (kimodoNarrated || !isPresentationMode) return;
       kimodoNarrated = true;
       pushPresentationLine('kimodo');
     };
     if (isPresentationMode) {
+      constrainTimer = setTimeout(() => {
+        narrateConstrain();
+      }, 800);
       kimodoTimer = setTimeout(() => {
         narrateKimodo();
-      }, 900);
+      }, 1600);
     }
 
     try {
@@ -820,13 +868,20 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await response.json();
 
       spinner.classList.add('hidden');
+      const hasConstraints = data.constraints_applied && data.constraints_applied.length > 0;
       if (!isPresentationMode) {
         if (data.prompts && data.prompts.length > 0) {
           refinedText.textContent = data.prompts[0];
         } else {
           refinedText.textContent = 'Agent chose speech only for this request.';
         }
+        if (hasConstraints) {
+          showConstraintTags(data.constraints_applied);
+        } else {
+          clearConstraintTags();
+        }
       } else if (data.viewer_url || (data.prompts && data.prompts.length > 0)) {
+        if (hasConstraints) narrateConstrain();
         narrateKimodo();
       }
 
@@ -871,9 +926,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       console.error(err);
     } finally {
-      if (kimodoTimer) {
-        clearTimeout(kimodoTimer);
-      }
+      if (constrainTimer) clearTimeout(constrainTimer);
+      if (kimodoTimer) clearTimeout(kimodoTimer);
     }
   });
 

@@ -19,6 +19,7 @@ class WebAgentRunResult:
     speech: dict[str, object] | None
     motions: list[dict[str, object]]
     warning: str | None = None
+    constraints_applied: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -29,6 +30,7 @@ class _ToolState:
     speech: dict[str, object] | None = None
     motions: list[dict[str, object]] = field(default_factory=list)
     warning: str | None = None
+    constraints_applied: list[str] = field(default_factory=list)
 
 
 def _extract_text_blocks(message: Any) -> str:
@@ -102,9 +104,18 @@ def run_agent_for_web(
     def generate_motion(
         description: str,
         diffusion_steps: int = default_diffusion_steps,
+        return_to_standing: bool = True,
+        move_direction: str = "",
+        move_distance: float = 0.5,
     ) -> dict[str, Any]:
         """Generate G1 motion files for the current web request."""
-        result = generate_motion_impl(description, diffusion_steps=diffusion_steps)
+        result = generate_motion_impl(
+            description,
+            diffusion_steps=diffusion_steps,
+            return_to_standing=return_to_standing,
+            move_direction=move_direction,
+            move_distance=move_distance,
+        )
         motions = result.get("motions") or []
         for motion in motions:
             if isinstance(motion, dict):
@@ -113,6 +124,12 @@ def run_agent_for_web(
         warning = result.get("warning")
         if isinstance(warning, str) and warning.strip():
             state.warning = warning.strip()
+
+        applied = result.get("constraints_applied")
+        if isinstance(applied, list):
+            for tag in applied:
+                if tag not in state.constraints_applied:
+                    state.constraints_applied.append(tag)
 
         return result
 
@@ -141,4 +158,5 @@ def run_agent_for_web(
         speech=state.speech,
         motions=state.motions,
         warning=state.warning,
+        constraints_applied=state.constraints_applied,
     )
