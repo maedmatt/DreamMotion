@@ -38,6 +38,7 @@ from web.agent_runner import run_agent_for_web
 
 logger = logging.getLogger(__name__)
 
+CANDIDATES_DIR = Path("output/candidates")
 CANDIDATE_SESSIONS: dict[str, dict] = {}
 
 # ---------------------------------------------------------------------------
@@ -239,6 +240,9 @@ def api_generate_candidates(req: CandidateRequest):
     first_prompt: str | None = None
     first_duration: float | None = None
 
+    candidates_dir = CANDIDATES_DIR / str(time.time_ns())
+    candidates_dir.mkdir(parents=True, exist_ok=True)
+
     for _ in range(req.num_samples):
         result = generate_motion_impl(
             prompt,
@@ -246,6 +250,7 @@ def api_generate_candidates(req: CandidateRequest):
             return_to_standing=req.return_to_standing,
             move_direction=move_direction,
             move_distance=move_distance,
+            output_dir=candidates_dir,
         )
         for motion in result.get("motions") or []:
             qpos_raw = motion.get("qpos_path")

@@ -238,6 +238,7 @@ def _call_kimodo(
     cfg_type: str = "regular",
     cfg_weight: list[float] | None = None,
     constraints: list[dict] | None = None,
+    output_dir: Path | None = None,
 ) -> tuple[Path, Path | None, bytes | None]:
     """Call Kimodo API and save results as CSV and .pt.
 
@@ -270,7 +271,8 @@ def _call_kimodo(
     ]
     log.info("Kimodo request constraints: %s", constraint_keys)
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    dest = output_dir or OUTPUT_DIR
+    dest.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
     url = _kimodo_url()
 
@@ -281,7 +283,7 @@ def _call_kimodo(
         timeout=120.0,
     )
     csv_response.raise_for_status()
-    csv_path = OUTPUT_DIR / f"qpos_{timestamp}.csv"
+    csv_path = dest / f"qpos_{timestamp}.csv"
     csv_path.write_bytes(csv_response.content)
 
     pt_path = None
@@ -295,7 +297,7 @@ def _call_kimodo(
         )
         pt_response.raise_for_status()
         pt_bytes = pt_response.content
-        pt_path = OUTPUT_DIR / f"qpos_{timestamp}.pt"
+        pt_path = dest / f"qpos_{timestamp}.pt"
         pt_path.write_bytes(pt_bytes)
     except httpx.HTTPError:
         log.warning("Failed to fetch .pt from Kimodo, skipping")
@@ -354,6 +356,7 @@ def generate_motion_impl(
     return_to_standing: bool = True,
     move_direction: str = "",
     move_distance: float = 0.5,
+    output_dir: Path | None = None,
 ) -> dict:
     """Shared implementation for motion generation across CLI and web agent flows."""
     refined = refine_prompt(description)
@@ -406,6 +409,7 @@ def generate_motion_impl(
                 duration,
                 diffusion_steps,
                 constraints=all_constraints or None,
+                output_dir=output_dir,
             )
         except httpx.HTTPError:
             log.warning(

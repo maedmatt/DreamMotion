@@ -61,7 +61,9 @@ def _resolve_network_interface() -> tuple[
     tuple[str, ...],
 ]:
     available_interfaces = _list_available_interfaces()
-    configured_env = _normalize_interface_name(os.environ.get("UNITREE_NETWORK_INTERFACE"))
+    configured_env = _normalize_interface_name(
+        os.environ.get("UNITREE_NETWORK_INTERFACE")
+    )
     configured_dotenv = _normalize_interface_name(
         dotenv_values().get("UNITREE_NETWORK_INTERFACE")
     )
@@ -77,10 +79,9 @@ def _resolve_network_interface() -> tuple[
 
     if configured_env and available_interfaces:
         notes.append(
-            "Ignoring stale UNITREE_NETWORK_INTERFACE=%r from the process "
-            "environment because it is not available on this host. Available "
-            "interfaces: %s."
-            % (configured_env, ", ".join(available_interfaces))
+            f"Ignoring stale UNITREE_NETWORK_INTERFACE={configured_env!r} "
+            f"from the process environment because it is not available on "
+            f"this host. Available interfaces: {', '.join(available_interfaces)}."
         )
 
     if configured_dotenv and is_available(configured_dotenv):
@@ -88,9 +89,9 @@ def _resolve_network_interface() -> tuple[
 
     if configured_dotenv and available_interfaces:
         notes.append(
-            "Configured UNITREE_NETWORK_INTERFACE=%r from .env is not available "
-            "on this host. Available interfaces: %s."
-            % (configured_dotenv, ", ".join(available_interfaces))
+            f"Configured UNITREE_NETWORK_INTERFACE={configured_dotenv!r} "
+            f"from .env is not available on this host. "
+            f"Available interfaces: {', '.join(available_interfaces)}."
         )
 
     return None, "autodetect", available_interfaces, tuple(notes)
