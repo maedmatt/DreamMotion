@@ -54,6 +54,81 @@ document.addEventListener('DOMContentLoaded', () => {
   const statusMsg = document.getElementById('status-message');
   const refinedText = document.getElementById('refined-prompt-text');
   const chatArea = document.getElementById('chat-area');
+  const candidatesContainer = document.getElementById('candidates-container');
+  const candidatesGrid = document.getElementById('candidates-grid');
+  const selectionModeToggle = document.getElementById('selection-mode-toggle');
+  const viewerContainer = document.getElementById('viewer-container');
+  let isSelectionMode = false;
+
+  if (selectionModeToggle) {
+    selectionModeToggle.addEventListener('change', () => {
+      isSelectionMode = selectionModeToggle.checked;
+      if (isSelectionMode) {
+        viewerContainer.classList.add('hidden');
+        candidatesContainer.classList.remove('hidden');
+        candidatesGrid.innerHTML = '';
+        for (let i = 0; i < 3; i++) {
+          const card = document.createElement('div');
+          card.className = 'candidate-card';
+          card.innerHTML = `
+            <iframe src="/viewer/__bootstrap__" scrolling="no"></iframe>
+            <div class="candidate-label">Option ${i + 1}</div>
+          `;
+          candidatesGrid.appendChild(card);
+        }
+      } else {
+        candidatesContainer.classList.add('hidden');
+        viewerContainer.classList.remove('hidden');
+      }
+    });
+  }
+
+  async function handleSelectionMode(prompt) {
+    addUserBubble(prompt);
+    addTypingIndicator();
+    try {
+      const response = await fetch('/api/generate-candidates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, num_samples: 3 }),
+      });
+      if (!response.ok) throw new Error('Failed to generate candidates');
+      const data = await response.json();
+      removeTypingIndicator();
+      addBotBubble('Here are 3 variations — click your favorite!');
+      const cards = candidatesGrid.querySelectorAll('.candidate-card');
+      data.candidates.forEach((c, i) => {
+        if (cards[i]) {
+          const iframe = cards[i].querySelector('iframe');
+          if (iframe) iframe.src = `/viewer/${c.task_id}`;
+          cards[i].querySelector('.candidate-label').textContent = `Option ${i + 1} · ${c.num_frames} frames`;
+          cards[i].classList.remove('selected');
+          cards[i].onclick = () => selectCandidate(data.session_id, i, cards[i]);
+        }
+      });
+    } catch (err) {
+      removeTypingIndicator();
+      addBotBubble('Sorry, failed to generate candidates.');
+      console.error(err);
+    }
+  }
+
+  async function selectCandidate(sessionId, index, cardEl) {
+    candidatesGrid.querySelectorAll('.candidate-card').forEach(c => c.classList.remove('selected'));
+    cardEl.classList.add('selected');
+    try {
+      const response = await fetch('/api/select-candidate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId, sample_index: index }),
+      });
+      if (!response.ok) throw new Error('Selection failed');
+      addBotBubble(`Option ${index + 1} selected! Motion sent to the robot.`);
+    } catch (err) {
+      addBotBubble('Failed to select motion.');
+      console.error(err);
+    }
+  }
 
   function addUserBubble(text) {
     const row = document.createElement('div');
@@ -105,7 +180,6 @@ document.addEventListener('DOMContentLoaded', () => {
     return div.innerHTML;
   }
   const spinner = document.getElementById('loading-spinner');
-  const viewerContainer = document.getElementById('viewer-container');
   const actionBar = document.getElementById('action-bar');
   const micBtn = document.getElementById('mic-btn');
   const settingsBtn = document.getElementById('settings-btn');
@@ -231,7 +305,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const res = await fetch('/api/speak', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, target: 'robot' }),
+          body: JSON.stringify({ text, target: 'robot', voice: ttsVoice }),
         });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
@@ -807,6 +881,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const prompt = input.value.trim();
     if (!prompt) return;
     if (isRecording) stopRecording();
+
+    if (isSelectionMode) {
+      input.value = '';
+      void handleSelectionMode(prompt);
+      return;
+    }
 
     // Chat bubbles
     addUserBubble(prompt);

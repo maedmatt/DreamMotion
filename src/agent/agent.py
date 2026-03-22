@@ -63,8 +63,8 @@ _CONSTRAINT_SECTION = dedent(
     ### Object-relative final root position (final_root_x + final_root_y)
     When you already know an object's relative base-frame position, set
     final_root_x and final_root_y so the final body position matches that
-    object in the ground plane. Only constrain X/Y; the tool keeps Z at the
-    standing height.
+    object in the ground plane. This is applied through a final root2d
+    constraint in Kimodo.
     """
 ).strip()
 
@@ -86,15 +86,13 @@ _TREASURE_HUNT_PROMPT = dedent(
     picking it up.
 
     For requests like "go to the bottle", "approach that object", or "move to
-    the can", first call treasure_hunt with action="locate". Then read
-    target_local_xyz from the tool result and call generate_motion once with
-    final_root_x=target_local_xyz[0] and final_root_y=target_local_xyz[1].
-
-    For point_at, step_on, and pick_up, prefer treasure_hunt directly because
-    it already handles the constrained action flow.
+    the can", prefer treasure_hunt with action="walk_to". It will detect the
+    object, estimate its pose, and generate the Kimodo motion with a final
+    base-frame root constraint.
 
     Choose the treasure_hunt action based on intent:
       - locate   -> "where is the bottle?", "can you see the bottle?", "find the bottle"
+      - walk_to  -> "go to the bottle", "approach the bottle", "move to the bottle"
       - point_at -> "point at the bottle", "show me the bottle"
       - step_on  -> "step on the bottle", "stomp on the marker"
       - pick_up  -> "pick up the bottle", "grab the bottle"
