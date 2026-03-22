@@ -172,7 +172,7 @@ def run_agent_for_web(
         and state.speech
         and isinstance(state.speech.get("error"), str)
     ):
-        error = state.speech["error"].strip()
+        error = str(state.speech["error"]).strip()
         if error:
             state.warning = error
 
