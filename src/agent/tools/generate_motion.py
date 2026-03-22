@@ -25,8 +25,7 @@ DEFAULT_DOF_POS: list[float] = [
 ]
 # fmt: on
 
-# Root position / orientation defaults (MuJoCo Z-up: X=forward, Y=left, Z=up)
-DEFAULT_ROOT_HEIGHT = 0.75
+KIMODO_FPS = 30
 
 # Direction → (dx, dy) unit vectors in MuJoCo ground plane (X=forward, Y=left)
 _DIRECTION_VECTORS: dict[str, tuple[float, float]] = {
@@ -41,15 +40,58 @@ _DIRECTION_VECTORS: dict[str, tuple[float, float]] = {
 }
 
 
-def _compute_final_root_pos(
+def _mujoco_to_kimodo_2d(mujoco_x: float, mujoco_y: float) -> list[float]:
+    """MuJoCo ground plane (X=fwd, Y=left) → Kimodo smooth_root_2d.
+
+    Kimodo is Y-up, Z-forward. The mujoco_to_kimodo matrix is:
+      kimodo_x = mujoco_y, kimodo_y = mujoco_z, kimodo_z = mujoco_x.
+    smooth_root_2d = [x_kimodo, z_kimodo] = [mujoco_y, mujoco_x].
+    """
+    return [mujoco_y, mujoco_x]
+
+
+def _build_root2d_constraints(
     direction: str,
     distance: float,
-) -> list[float] | None:
-    """Compute final root position from direction + distance in MuJoCo coords."""
+    duration: float,
+    waypoint_interval: int = 10,
+) -> list[dict] | None:
+    """Build root2d constraint dicts for the ``constraints`` API field.
+
+    Creates dense waypoints every *waypoint_interval* frames along a
+    linear trajectory from origin to the target position.
+    """
     vec = _DIRECTION_VECTORS.get(direction.lower().strip())
     if vec is None:
         return None
-    return [vec[0] * distance, vec[1] * distance, DEFAULT_ROOT_HEIGHT]
+
+    dx, dy = vec
+    total_x, total_y = dx * distance, dy * distance
+
+    num_frames = int(duration * KIMODO_FPS)
+    last = max(num_frames - 1, 1)
+
+    frame_indices: list[int] = list(range(0, last, waypoint_interval))
+    if frame_indices[-1] != last:
+        frame_indices.append(last)
+
+    smooth_root_2d: list[list[float]] = []
+    for f in frame_indices:
+        t = f / last
+        smooth_root_2d.append(_mujoco_to_kimodo_2d(total_x * t, total_y * t))
+
+    constraint: dict = {
+        "type": "root2d",
+        "frame_indices": frame_indices,
+        "smooth_root_2d": smooth_root_2d,
+    }
+    log.info(
+        "root2d constraint: %d waypoints, start=%s, end=%s",
+        len(frame_indices),
+        smooth_root_2d[0],
+        smooth_root_2d[-1],
+    )
+    return [constraint]
 
 
 def _kimodo_url() -> str:
@@ -65,10 +107,6 @@ def _call_kimodo(
     diffusion_steps: int,
     initial_dof_pos: list[float] | None = None,
     final_dof_pos: list[float] | None = None,
-    initial_root_pos: list[float] | None = None,
-    initial_root_quat: list[float] | None = None,
-    final_root_pos: list[float] | None = None,
-    final_root_quat: list[float] | None = None,
     num_samples: int = 1,
     num_transition_frames: int = 5,
     cfg_type: str = "regular",
@@ -77,8 +115,9 @@ def _call_kimodo(
 ) -> tuple[Path, Path | None, bytes | None]:
     """Call Kimodo API and save results as CSV and .pt.
 
-    Root position is MuJoCo [x,y,z] (Z-up). Root quaternion is [w,x,y,z].
-    The server converts these to Kimodo's Y-up coordinate system internally.
+    Supported constraint params (per Kimodo API):
+      - initial_dof_pos / final_dof_pos: soft joint-angle guidance
+      - constraints: raw Kimodo constraint dicts (root2d, etc.)
     """
     body: dict = {
         "prompt": prompt,
@@ -89,14 +128,6 @@ def _call_kimodo(
         body["initial_dof_pos"] = initial_dof_pos
     if final_dof_pos is not None:
         body["final_dof_pos"] = final_dof_pos
-    if initial_root_pos is not None:
-        body["initial_root_pos"] = initial_root_pos
-    if initial_root_quat is not None:
-        body["initial_root_quat"] = initial_root_quat
-    if final_root_pos is not None:
-        body["final_root_pos"] = final_root_pos
-    if final_root_quat is not None:
-        body["final_root_quat"] = final_root_quat
     if num_samples != 1:
         body["num_samples"] = num_samples
     if num_transition_frames != 5:
@@ -109,25 +140,14 @@ def _call_kimodo(
         body["constraints"] = constraints
 
     constraint_keys = [
-        k
-        for k in (
-            "initial_dof_pos",
-            "final_dof_pos",
-            "initial_root_pos",
-            "final_root_pos",
-            "initial_root_quat",
-            "final_root_quat",
-            "constraints",
-        )
-        if k in body
+        k for k in ("initial_dof_pos", "final_dof_pos", "constraints") if k in body
     ]
-    log.info("Kimodo body keys with constraints: %s", constraint_keys)
+    log.info("Kimodo request constraints: %s", constraint_keys)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
     url = _kimodo_url()
 
-    # CSV endpoint → human-readable qpos record
     csv_response = httpx.post(
         f"{url}/generate/csv",
         headers=KIMODO_HEADERS,
@@ -138,7 +158,6 @@ def _call_kimodo(
     csv_path = OUTPUT_DIR / f"qpos_{timestamp}.csv"
     csv_path.write_bytes(csv_response.content)
 
-    # PT endpoint → MotionLib tensor for sim and ZMQ (best-effort)
     pt_path = None
     pt_bytes = None
     try:
@@ -218,38 +237,35 @@ def generate_motion_impl(
         constraints_applied.append("return_to_standing")
 
     has_locomotion = bool(move_direction and move_direction.strip())
-    initial_root: list[float] | None = None
-    final_root: list[float] | None = None
-
     if has_locomotion:
-        initial_root = [0.0, 0.0, DEFAULT_ROOT_HEIGHT]
-        final_root = _compute_final_root_pos(move_direction, move_distance)
-        if final_root:
-            constraints_applied.append(
-                f"locomotion:{move_direction.strip()}:{move_distance:.1f}m"
-            )
+        constraints_applied.append(
+            f"locomotion:{move_direction.strip()}:{move_distance:.1f}m"
+        )
 
-    log.info(
-        "Constraints: %s | final_dof=%s | root=%s→%s",
-        constraints_applied or "none",
-        "standing" if return_to_standing else "free",
-        initial_root,
-        final_root,
-    )
+    log.info("Constraints: %s", constraints_applied or "none")
 
     results = []
     for prompt, duration in zip(prompts, durations, strict=True):
+        root2d = (
+            _build_root2d_constraints(move_direction, move_distance, duration)
+            if has_locomotion
+            else None
+        )
+        use_final_dof = return_to_standing and not has_locomotion
         try:
             qpos_path, pt_path, _pt_bytes = _call_kimodo(
                 prompt,
                 duration,
                 diffusion_steps,
-                final_dof_pos=DEFAULT_DOF_POS if return_to_standing else None,
-                initial_root_pos=initial_root,
-                final_root_pos=final_root,
+                final_dof_pos=(DEFAULT_DOF_POS if use_final_dof else None),
+                constraints=root2d,
             )
         except httpx.HTTPError:
-            log.warning("Kimodo call failed for prompt: %s", prompt, exc_info=True)
+            log.warning(
+                "Kimodo call failed for prompt: %s",
+                prompt,
+                exc_info=True,
+            )
             results.append(
                 {
                     "prompt": prompt,
