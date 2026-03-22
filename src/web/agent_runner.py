@@ -20,6 +20,7 @@ class WebAgentRunResult:
     speech: dict[str, object] | None
     motions: list[dict[str, object]]
     warning: str | None = None
+    constraints_applied: list[str] = field(default_factory=list)
     treasure_hunt: dict[str, object] | None = None
 
 
@@ -31,6 +32,7 @@ class _ToolState:
     speech: dict[str, object] | None = None
     motions: list[dict[str, object]] = field(default_factory=list)
     warning: str | None = None
+    constraints_applied: list[str] = field(default_factory=list)
     treasure_hunt: dict[str, object] | None = None
 
 
@@ -88,6 +90,12 @@ def run_agent_for_web(
         if isinstance(warning, str) and warning.strip():
             state.warning = warning.strip()
 
+        applied = result.get("constraints_applied")
+        if isinstance(applied, list):
+            for tag in applied:
+                if tag not in state.constraints_applied:
+                    state.constraints_applied.append(tag)
+
         return result
 
     @tool
@@ -128,9 +136,22 @@ def run_agent_for_web(
     def generate_motion(
         description: str,
         diffusion_steps: int = default_diffusion_steps,
+        return_to_standing: bool = True,
+        move_direction: str = "",
+        move_distance: float = 0.5,
+        final_root_x: float | None = None,
+        final_root_y: float | None = None,
     ) -> dict[str, Any]:
         """Generate G1 motion files for the current web request."""
-        return _run_generate_motion(description, diffusion_steps=diffusion_steps)
+        return _run_generate_motion(
+            description,
+            diffusion_steps=diffusion_steps,
+            return_to_standing=return_to_standing,
+            move_direction=move_direction,
+            move_distance=move_distance,
+            final_root_x=final_root_x,
+            final_root_y=final_root_y,
+        )
 
     @tool
     def treasure_hunt(target_object: str, action: str = "walk_to") -> dict[str, Any]:
@@ -172,5 +193,6 @@ def run_agent_for_web(
         speech=state.speech,
         motions=state.motions,
         warning=state.warning,
+        constraints_applied=state.constraints_applied,
         treasure_hunt=state.treasure_hunt,
     )
