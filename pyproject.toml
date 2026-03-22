@@ -21,6 +21,7 @@ web = "web.server:main"
 [project.optional-dependencies]
 deploy = ["robojudo", "mujoco-python-viewer"]
 tts = ["unitree-sdk2py"]
+vision = ["depthai", "numpy", "opencv-python", "scipy", "supervision", "ultralytics"]
 
 [tool.uv.sources]
 robojudo = { path = "../RoboJuDo", editable = true }

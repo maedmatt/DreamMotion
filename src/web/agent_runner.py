@@ -7,6 +7,7 @@ from strands import tool
 
 from agent.agent import create_agent
 from agent.tools.generate_motion import generate_motion_impl
+from agent.tools.treasure_hunt import treasure_hunt_impl
 from g1.audio.tool import say_text_impl
 
 SpeechTarget = Literal["web", "robot"]
@@ -19,6 +20,7 @@ class WebAgentRunResult:
     speech: dict[str, object] | None
     motions: list[dict[str, object]]
     warning: str | None = None
+    treasure_hunt: dict[str, object] | None = None
 
 
 @dataclass(slots=True)
@@ -29,6 +31,7 @@ class _ToolState:
     speech: dict[str, object] | None = None
     motions: list[dict[str, object]] = field(default_factory=list)
     warning: str | None = None
+    treasure_hunt: dict[str, object] | None = None
 
 
 def _extract_text_blocks(message: Any) -> str:
@@ -61,12 +64,35 @@ def run_agent_for_web(
     default_diffusion_steps = diffusion_steps
     default_speaker_id = speaker_id
 
+    def _capture_narration(text: str) -> None:
+        message = text.strip()
+        if message and not state.spoken_text:
+            state.spoken_text = message
+
+    def _run_generate_motion(
+        description: str,
+        diffusion_steps: int = default_diffusion_steps,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        result = generate_motion_impl(
+            description,
+            diffusion_steps=diffusion_steps,
+            **kwargs,
+        )
+        motions = result.get("motions") or []
+        for motion in motions:
+            if isinstance(motion, dict):
+                state.motions.append(dict(motion))
+
+        warning = result.get("warning")
+        if isinstance(warning, str) and warning.strip():
+            state.warning = warning.strip()
+
+        return result
+
     @tool
     def say_text(text: str, speaker_id: int = default_speaker_id) -> dict[str, object]:
-        """Speak a short line out loud for the current web request.
-
-        Use this on every turn after drafting a concise spoken script.
-        """
+        """Speak a short line out loud for the current web request."""
         message = text.strip()
         if not message:
             response: dict[str, object] = {
@@ -104,19 +130,24 @@ def run_agent_for_web(
         diffusion_steps: int = default_diffusion_steps,
     ) -> dict[str, Any]:
         """Generate G1 motion files for the current web request."""
-        result = generate_motion_impl(description, diffusion_steps=diffusion_steps)
-        motions = result.get("motions") or []
-        for motion in motions:
-            if isinstance(motion, dict):
-                state.motions.append(dict(motion))
+        return _run_generate_motion(description, diffusion_steps=diffusion_steps)
 
+    @tool
+    def treasure_hunt(target_object: str, action: str = "walk_to") -> dict[str, Any]:
+        """Run the object-vision FSM and generate constrained motions when needed."""
+        result = treasure_hunt_impl(
+            target_object=target_object,
+            action=action,
+            say=_capture_narration,
+            motion_generator=_run_generate_motion,
+        )
+        state.treasure_hunt = dict(result)
         warning = result.get("warning")
-        if isinstance(warning, str) and warning.strip():
+        if isinstance(warning, str) and warning.strip() and not state.warning:
             state.warning = warning.strip()
-
         return result
 
-    agent = create_agent(tools=[generate_motion, say_text])
+    agent = create_agent(tools=[generate_motion, say_text, treasure_hunt])
     result = agent(prompt)
 
     reply_text = _extract_text_blocks(getattr(result, "message", None))
@@ -141,4 +172,5 @@ def run_agent_for_web(
         speech=state.speech,
         motions=state.motions,
         warning=state.warning,
+        treasure_hunt=state.treasure_hunt,
     )

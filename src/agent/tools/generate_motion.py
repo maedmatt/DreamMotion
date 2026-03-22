@@ -4,6 +4,7 @@ import logging
 import os
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import httpx
 from strands import tool
@@ -15,7 +16,7 @@ log = logging.getLogger(__name__)
 OUTPUT_DIR = Path("output")
 
 # fmt: off
-# Default standing joint angles (29 DOFs) — shared with AgentTrackerPolicy
+# Default standing joint angles (29 DOFs) - shared with AgentTrackerPolicy
 DEFAULT_DOF_POS = [
     -0.312,  0.0,    0.0,   0.669, -0.363,  0.0,    # left leg
     -0.312,  0.0,    0.0,   0.669, -0.363,  0.0,    # right leg
@@ -32,12 +33,11 @@ FINAL_ROOT_POS = [2.0, 0.0, DEFAULT_ROOT_HEIGHT]
 DEFAULT_ROOT_QUAT = [1.0, 0.0, 0.0, 0.0]  # identity wxyz
 
 
+KIMODO_HEADERS = {"ngrok-skip-browser-warning": "true"}
+
 
 def _kimodo_url() -> str:
     return os.environ.get("KIMODO_URL", "http://localhost:8420")
-
-
-KIMODO_HEADERS = {"ngrok-skip-browser-warning": "true"}
 
 
 def _call_kimodo(
@@ -54,14 +54,10 @@ def _call_kimodo(
     num_transition_frames: int = 5,
     cfg_type: str = "regular",
     cfg_weight: list[float] | None = None,
-    constraints: list[dict] | None = None,
+    constraints: list[dict[str, Any]] | None = None,
 ) -> tuple[Path, Path | None, bytes | None]:
-    """Call Kimodo API and save results as CSV and .pt.
-
-    Root position is MuJoCo [x,y,z] (Z-up). Root quaternion is [w,x,y,z].
-    The server converts these to Kimodo's Y-up coordinate system internally.
-    """
-    body: dict = {
+    """Call Kimodo API and save results as CSV and .pt."""
+    body: dict[str, Any] = {
         "prompt": prompt,
         "duration": duration,
         "diffusion_steps": diffusion_steps,
@@ -93,7 +89,6 @@ def _call_kimodo(
     timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
     url = _kimodo_url()
 
-    # CSV endpoint → human-readable qpos record
     csv_response = httpx.post(
         f"{url}/generate/csv",
         headers=KIMODO_HEADERS,
@@ -104,7 +99,6 @@ def _call_kimodo(
     csv_path = OUTPUT_DIR / f"qpos_{timestamp}.csv"
     csv_path.write_bytes(csv_response.content)
 
-    # PT endpoint → MotionLib tensor for sim and ZMQ (best-effort)
     pt_path = None
     pt_bytes = None
     try:
@@ -125,47 +119,58 @@ def _call_kimodo(
 
 
 @tool
-def generate_motion(description: str, diffusion_steps: int = 50) -> dict:
-    """Generate humanoid robot motion from a natural language description.
-
-    Automatically refines the description into optimized Kimodo prompt(s) and
-    calls Kimodo to produce G1 qpos trajectories. Handles multi-step sequences
-    by splitting them into separate motion clips.
-
-    Each frame has 36 values: root xyz, root quaternion wxyz, 29 joint angles.
-    Use this whenever the user asks for a robot motion, pose, or movement.
-
-    Args:
-        description: Natural language description of the desired motion or sequence.
-        diffusion_steps: Number of diffusion steps for generation quality (default 50).
-
-    Returns:
-        Dictionary with a list of generated motions (qpos_path, prompt, duration,
-        num_frames), plus an optional warning if unsupported behavior was approximated.
-    """
+def generate_motion(description: str, diffusion_steps: int = 50) -> dict[str, object]:
+    """Generate humanoid robot motion from a natural language description."""
     return generate_motion_impl(description, diffusion_steps=diffusion_steps)
 
 
-def generate_motion_impl(description: str, diffusion_steps: int = 50) -> dict:
-    """Shared implementation for motion generation across CLI and web agent flows."""
+def generate_motion_impl(
+    description: str,
+    diffusion_steps: int = 50,
+    *,
+    initial_dof_pos: list[float] | None = None,
+    final_dof_pos: list[float] | None = None,
+    initial_root_pos: list[float] | None = None,
+    initial_root_quat: list[float] | None = None,
+    final_root_pos: list[float] | None = None,
+    final_root_quat: list[float] | None = None,
+    num_samples: int = 1,
+    num_transition_frames: int = 5,
+    cfg_type: str = "regular",
+    cfg_weight: list[float] | None = None,
+    constraints: list[dict[str, Any]] | None = None,
+) -> dict[str, object]:
+    """Shared implementation for motion generation across CLI and web flows."""
     refined = refine_prompt(description)
     prompts = refined["prompts"]
     durations = refined["durations"]
     warning = refined.get("warning")
 
-    results = []
+    resolved_initial_dof_pos = DEFAULT_DOF_POS if initial_dof_pos is None else initial_dof_pos
+    resolved_final_dof_pos = DEFAULT_DOF_POS if final_dof_pos is None else final_dof_pos
+    resolved_initial_root_pos = INITIAL_ROOT_POS if initial_root_pos is None else initial_root_pos
+    resolved_initial_root_quat = DEFAULT_ROOT_QUAT if initial_root_quat is None else initial_root_quat
+    resolved_final_root_pos = FINAL_ROOT_POS if final_root_pos is None else final_root_pos
+    resolved_final_root_quat = DEFAULT_ROOT_QUAT if final_root_quat is None else final_root_quat
+
+    results: list[dict[str, object]] = []
     for prompt, duration in zip(prompts, durations, strict=True):
         try:
-          qpos_path, pt_path, pt_bytes = _call_kimodo(
+            qpos_path, pt_path, _pt_bytes = _call_kimodo(
                 prompt,
                 duration,
                 diffusion_steps,
-                initial_dof_pos=DEFAULT_DOF_POS,
-                final_dof_pos=DEFAULT_DOF_POS,
-                initial_root_pos=INITIAL_ROOT_POS,
-                initial_root_quat=DEFAULT_ROOT_QUAT,
-                final_root_pos=FINAL_ROOT_POS,
-                final_root_quat=DEFAULT_ROOT_QUAT,
+                initial_dof_pos=resolved_initial_dof_pos,
+                final_dof_pos=resolved_final_dof_pos,
+                initial_root_pos=resolved_initial_root_pos,
+                initial_root_quat=resolved_initial_root_quat,
+                final_root_pos=resolved_final_root_pos,
+                final_root_quat=resolved_final_root_quat,
+                num_samples=num_samples,
+                num_transition_frames=num_transition_frames,
+                cfg_type=cfg_type,
+                cfg_weight=cfg_weight,
+                constraints=constraints,
             )
         except httpx.HTTPError:
             log.warning("Kimodo call failed for prompt: %s", prompt, exc_info=True)
@@ -178,7 +183,7 @@ def generate_motion_impl(description: str, diffusion_steps: int = 50) -> dict:
             )
             continue
 
-        motion: dict[str, str | float] = {
+        motion: dict[str, object] = {
             "qpos_path": str(qpos_path),
             "prompt": prompt,
             "duration": duration,
@@ -187,7 +192,7 @@ def generate_motion_impl(description: str, diffusion_steps: int = 50) -> dict:
             motion["pt_path"] = str(pt_path)
         results.append(motion)
 
-    output: dict = {"motions": results}
+    output: dict[str, object] = {"motions": results}
     if warning:
         output["warning"] = warning
     return output

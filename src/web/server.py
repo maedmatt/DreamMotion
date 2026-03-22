@@ -196,6 +196,8 @@ def api_generate(req: GenerateRequest):
         result["viewer_url"] = viewer_url
     if agent_result.warning:
         result["warning"] = agent_result.warning
+    if agent_result.treasure_hunt is not None:
+        result["treasure_hunt"] = agent_result.treasure_hunt
     return result
 
 

@@ -15,6 +15,7 @@ Usage:
 from __future__ import annotations
 
 # Fix OMP performance issue on ARM platform (Jetson)
+import inspect
 import os
 import platform
 
@@ -30,6 +31,27 @@ import numpy as np
 import tyro
 
 logger = logging.getLogger("robojudo")
+
+
+def _enable_mujoco_viewer_compat() -> None:
+    """Adapt stock mujoco-python-viewer to RoboJuDo's patched call signature."""
+    try:
+        import mujoco_viewer
+    except Exception:
+        return
+
+    init = mujoco_viewer.MujocoViewer.__init__
+    if getattr(init, "_g1_compat_patched", False):
+        return
+    if "diable_key_callbacks" in inspect.signature(init).parameters:
+        return
+
+    def compat_init(self, *args, diable_key_callbacks=None, **kwargs):
+        del diable_key_callbacks
+        return init(self, *args, **kwargs)
+
+    compat_init._g1_compat_patched = True  # type: ignore[attr-defined]
+    mujoco_viewer.MujocoViewer.__init__ = compat_init
 
 
 @dataclass
@@ -78,6 +100,7 @@ def find_latest_pt(watch_dir: Path, after_mtime: float) -> Path | None:
 
 def main() -> None:
     cfg = tyro.cli(DeployConfig)
+    _enable_mujoco_viewer_compat()
 
     # Import our policy and configs to trigger @register decorators
     import robojudo.pipeline

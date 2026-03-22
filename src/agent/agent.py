@@ -10,60 +10,66 @@ from strands import Agent
 from strands.models.openai import OpenAIModel
 
 from agent.tools.generate_motion import generate_motion
+from agent.tools.treasure_hunt import treasure_hunt
 
-SYSTEM_PROMPT = dedent("""
+
+_BASE_PROMPT = dedent("""
     You are a motion planner for the Unitree G1 humanoid robot.
 
     When the user describes a motion, pose, or action, call generate_motion
-    with the user's description exactly as stated — the tool handles prompt
+    with the user's description exactly as stated - the tool handles prompt
     optimization internally. The tool may return multiple motion clips if the
     description involves a sequence.
 
-    Summarize results naturally: how many motions, what they are, total
-    duration. If a warning is returned, relay it clearly.
+    Summarize results naturally: how many motions, what they are, and the most
+    important warnings.
 
-    If a tool fails, explain the error in plain language and suggest
-    alternatives. Do not expose raw file paths or status codes.
-
-    Call generate_motion exactly once per user request. Do not call it
-    multiple times unless the user explicitly asks for variations.
+    If a tool fails, explain the error in plain language and suggest a practical
+    alternative. Do not expose raw file paths or status codes unless the user
+    explicitly asks for them.
 """).strip()
 
-SYSTEM_PROMPT_WITH_TTS = dedent("""
-    You are a motion planner and speech assistant for the Unitree G1 humanoid robot.
+_TTS_PROMPT = dedent("""
+    You also have a say_text tool.
 
-    You have two tools:
-    - generate_motion: creates robot motion files from natural-language descriptions
-    - say_text: makes the robot or UI speak a short line out loud
-
-    For every user prompt, you must create a short spoken response and call say_text.
-    The robot should say something on every turn.
-
-    Before calling say_text, write a short spoken script that matches the user's
-    intent, tone, and language. Do not pass the raw user prompt to say_text unless
-    the user explicitly asks for exact wording.
-
-    Keep the spoken script natural, concise, and ready to be spoken aloud.
-    Prefer one or two short sentences unless the user asks for a longer speech.
-
-    Whenever a reasonable body expression is possible, also call generate_motion.
-    Do this not only for explicit motion requests, but also for conversational
-    requests that can be embodied as a gesture, pose, reaction, greeting, nod,
-    wave, point, shrug, stance change, or short locomotion.
-
-    If the user explicitly describes a motion, pose, or action, call
-    generate_motion with the user's description exactly as stated — the tool
-    handles prompt optimization internally.
-
-    If the user does not explicitly describe a motion, invent a short, natural
-    motion description that fits the user's intent and call generate_motion with
-    that description whenever it is plausible.
-
-    Skip motion only when no sensible physical behavior fits the request.
-
-    Report the resulting motion details, warnings, and spoken lines back to
-    the user. If a warning is returned, relay it to the user.
+    For every user prompt, you must draft a short spoken response and call
+    say_text exactly once. Keep the spoken line natural and concise.
 """).strip()
+
+_TREASURE_HUNT_PROMPT = dedent("""
+    You also have a treasure_hunt tool for real-world object tasks.
+
+    Use treasure_hunt when the user asks about a physical object in the room,
+    for example locating it, going to it, pointing at it, stepping on it, or
+    picking it up. Prefer treasure_hunt over generate_motion for these cases,
+    because treasure_hunt already handles vision, the FSM, and constrained
+    motion generation.
+
+    Choose the treasure_hunt action based on intent:
+      - locate   -> "where is the bottle?", "can you see the bottle?", "find the bottle"
+      - walk_to  -> "go to the bottle", "approach the bottle", "move towards the bottle"
+      - point_at -> "point at the bottle", "show me the bottle"
+      - step_on  -> "step on the bottle", "stomp on the marker"
+      - pick_up  -> "pick up the bottle", "grab the bottle"
+""").strip()
+
+
+def _tool_names(tools: Sequence[Any]) -> set[str]:
+    names: set[str] = set()
+    for tool_obj in tools:
+        name = getattr(tool_obj, "__name__", None)
+        if isinstance(name, str) and name:
+            names.add(name)
+    return names
+
+
+def _build_system_prompt(tool_names: set[str]) -> str:
+    sections = [_BASE_PROMPT]
+    if "say_text" in tool_names:
+        sections.append(_TTS_PROMPT)
+    if "treasure_hunt" in tool_names:
+        sections.append(_TREASURE_HUNT_PROMPT)
+    return "\n\n".join(section for section in sections if section).strip()
 
 
 def create_agent(
@@ -72,10 +78,6 @@ def create_agent(
     model_id: str = "gpt-4.1",
 ) -> Agent:
     model = OpenAIModel(model_id=model_id)
-    if tools is not None:
-        resolved_tools = list(tools)
-        prompt = SYSTEM_PROMPT_WITH_TTS
-    else:
-        resolved_tools = [generate_motion]
-        prompt = SYSTEM_PROMPT
+    resolved_tools = list(tools) if tools is not None else [generate_motion, treasure_hunt]
+    prompt = _build_system_prompt(_tool_names(resolved_tools))
     return Agent(model=model, system_prompt=prompt, tools=resolved_tools)
