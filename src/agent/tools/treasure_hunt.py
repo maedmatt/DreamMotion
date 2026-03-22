@@ -56,12 +56,13 @@ def treasure_hunt(
     camera = get_camera()
     detector = get_detector()
     transforms = get_transform_service()
-    sdk = get_sdk_controller()
     say = _make_say_callback()
 
     act: Action = (
         action if action in ("locate", "walk_to", "step_on", "pick_up") else "step_on"
     )  # type: ignore[assignment]
+
+    sdk = get_sdk_controller() if act != "locate" else None
 
     machine = TreasureHuntStateMachine(
         target_object=target_object,

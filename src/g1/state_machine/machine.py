@@ -59,7 +59,7 @@ class TreasureHuntStateMachine:
         camera: OakCamera,
         detector: ObjectDetector,
         transforms: TransformService,
-        sdk_controller: SdkLocomotionController,
+        sdk_controller: SdkLocomotionController | None,
         say: Callable[[str], None],
         action: Action = "step_on",
     ) -> None:
@@ -217,6 +217,12 @@ class TreasureHuntStateMachine:
             return StateResult(
                 status="fail", next_state=State.FAIL, message="No target coordinate"
             )
+        if self._sdk is None:
+            return StateResult(
+                status="fail",
+                next_state=State.FAIL,
+                message="Unitree locomotion SDK is unavailable for move action",
+            )
 
         bx = float(self._target_local_xyz[0])
         by = float(self._target_local_xyz[1])
@@ -249,6 +255,12 @@ class TreasureHuntStateMachine:
             frame = self._camera.capture()
             detections = self._detector.detect(frame, [self._target])
             if detections and not detections[0].depth_valid:
+                if self._sdk is None:
+                    return StateResult(
+                        status="fail",
+                        next_state=State.FAIL,
+                        message="Unitree locomotion SDK is unavailable for close-range recovery",
+                    )
                 self._say("Too close, stepping back a little.")
                 self._sdk.step_backward(0.2)
                 return StateResult(
