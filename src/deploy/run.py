@@ -24,6 +24,7 @@ if platform.machine().startswith("aarch64"):
 import logging
 import time
 from dataclasses import dataclass
+from functools import wraps
 from pathlib import Path
 
 import numpy as np
@@ -76,8 +77,48 @@ def find_latest_pt(watch_dir: Path, after_mtime: float) -> Path | None:
     return best
 
 
+def patch_mujoco_viewer_compat() -> None:
+    """Accept RoboJuDo's viewer kwarg typo across mujoco_viewer versions."""
+    try:
+        import inspect
+        import mujoco_viewer
+    except Exception:
+        logger.debug("Skipping mujoco_viewer compatibility patch", exc_info=True)
+        return
+
+    viewer_class = mujoco_viewer.MujocoViewer
+    if getattr(viewer_class, "_robojudo_key_callback_compat", False):
+        return
+
+    init = viewer_class.__init__
+    try:
+        parameters = inspect.signature(init).parameters
+    except (TypeError, ValueError):
+        return
+
+    if "diable_key_callbacks" in parameters:
+        viewer_class._robojudo_key_callback_compat = True
+        return
+
+    accepts_disable = "disable_key_callbacks" in parameters
+
+    @wraps(init)
+    def compat_init(self, *args, **kwargs):
+        if "diable_key_callbacks" in kwargs:
+            value = kwargs.pop("diable_key_callbacks")
+            if accepts_disable and "disable_key_callbacks" not in kwargs:
+                kwargs["disable_key_callbacks"] = value
+        return init(self, *args, **kwargs)
+
+    viewer_class.__init__ = compat_init
+    viewer_class._robojudo_key_callback_compat = True
+    logger.info("Applied mujoco_viewer compatibility patch for RoboJuDo")
+
+
 def main() -> None:
     cfg = tyro.cli(DeployConfig)
+
+    patch_mujoco_viewer_compat()
 
     # Import our policy and configs to trigger @register decorators
     import robojudo.pipeline
