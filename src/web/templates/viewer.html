@@ -27,6 +27,20 @@
       z-index: 10;
       white-space: nowrap;
     }
+    #displacement {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      padding: 6px 10px;
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.6);
+      color: #fff;
+      font-size: 12px;
+      font-family: monospace;
+      pointer-events: none;
+      z-index: 10;
+      line-height: 1.5;
+    }
   </style>
   <script src="https://unpkg.com/three@0.146.0/build/three.js"></script>
   <script src="https://unpkg.com/three@0.146.0/examples/js/controls/OrbitControls.js"></script>
@@ -35,11 +49,12 @@
 </head>
 <body>
   <div id="status"></div>
+  <div id="displacement"></div>
   <script>
     const TASK_ID = __TASK_ID_JSON__;
     const G1_JOINT_NAMES = ['left_hip_pitch_joint', 'left_hip_roll_joint', 'left_hip_yaw_joint', 'left_knee_joint', 'left_ankle_pitch_joint', 'left_ankle_roll_joint', 'right_hip_pitch_joint', 'right_hip_roll_joint', 'right_hip_yaw_joint', 'right_knee_joint', 'right_ankle_pitch_joint', 'right_ankle_roll_joint', 'waist_yaw_joint', 'waist_roll_joint', 'waist_pitch_joint', 'left_shoulder_pitch_joint', 'left_shoulder_roll_joint', 'left_shoulder_yaw_joint', 'left_elbow_joint', 'left_wrist_roll_joint', 'left_wrist_pitch_joint', 'left_wrist_yaw_joint', 'right_shoulder_pitch_joint', 'right_shoulder_roll_joint', 'right_shoulder_yaw_joint', 'right_elbow_joint', 'right_wrist_roll_joint', 'right_wrist_pitch_joint', 'right_wrist_yaw_joint'];
     const JOINT_COUNT = 29;
-    const FPS = 50;
+    const FPS = 30;
 
     const statusEl = document.getElementById('status');
     function setStatus(msg) {
@@ -94,9 +109,24 @@
 
     const grid = new THREE.GridHelper(12, 24, 0x94a3b8, 0xcbd5e1);
     grid.position.y = 0.0;
-    grid.material.opacity = 0.2;
+    grid.material.opacity = 0.3;
     grid.material.transparent = true;
     scene.add(grid);
+
+    // 1m concentric rings for distance reference
+    for (const radius of [0.5, 1.0, 1.5, 2.0]) {
+      const ringGeo = new THREE.RingGeometry(radius - 0.005, radius + 0.005, 64);
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: radius === 1.0 ? 0x3b82f6 : 0x94a3b8,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: radius === 1.0 ? 0.5 : 0.25,
+      });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.002;
+      scene.add(ring);
+    }
 
     let robot = null;
     let rowFrames = null;
@@ -106,6 +136,9 @@
     let promptText = '';
     let groundAligned = false;
     let hasRootOrigin = false;
+
+    const dispEl = document.getElementById('displacement');
+    let lastDispUpdate = 0;
 
     const zUpToYUp = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
     const yUpToZUp = zUpToYUp.clone().invert();
@@ -146,12 +179,12 @@
         const ry = row[rootCols.y];
         const rz = row[rootCols.z];
         if (Number.isFinite(rx) && Number.isFinite(ry) && Number.isFinite(rz)) {
-          tmpPos.set(rx, ry, rz);
           if (!hasRootOrigin) {
-            rootOrigin.copy(tmpPos);
+            rootOrigin.set(rx, ry, rz);
             hasRootOrigin = true;
           }
-          tmpPos.sub(rootOrigin);
+          // Center horizontally (MuJoCo XY), keep absolute height (Z)
+          tmpPos.set(rx - rootOrigin.x, ry - rootOrigin.y, rz);
           tmpPos.applyQuaternion(zUpToYUp);
           motionRoot.position.copy(tmpPos);
         }
@@ -225,8 +258,9 @@
         }
 
         if (rowFrames && rowFrames.length > 0) {
+          robotRoot.position.set(0, 0, 0);
+          groundAligned = true;
           applyFrame(rowFrames[0]);
-          alignRobotToGround(true);
           startedAtMs = performance.now();
           setStatus(promptText + ' \u00b7 ' + rowFrames.length + ' frames');
         } else {
@@ -268,15 +302,16 @@
         }
         rootCols = parsed.root;
         hasRootOrigin = false;
-        groundAligned = false;
         for (let i = 0; i < jointIndices.length; i++) {
           jointIndices[i].csvCol = parsed.jointStart + i;
         }
         rowFrames = parsed.rows;
         startedAtMs = performance.now();
+        // Reset ground alignment offset — absolute height from CSV is used
+        robotRoot.position.set(0, 0, 0);
+        groundAligned = true;
         if (robot) {
           applyFrame(rowFrames[0]);
-          alignRobotToGround(true);
         }
         setStatus((promptText || 'Motion') + ' \u00b7 ' + rowFrames.length + ' frames');
       } catch (e) {
@@ -302,6 +337,18 @@
           const elapsedSec = (performance.now() - startedAtMs) / 1000;
           const frameIdx = Math.floor(elapsedSec * FPS) % rowFrames.length;
           applyFrame(rowFrames[frameIdx]);
+
+          const now = performance.now();
+          if (rootCols && now - lastDispUpdate > 100) {
+            lastDispUpdate = now;
+            const row = rowFrames[frameIdx];
+            const dx = row[rootCols.x] - rowFrames[0][rootCols.x];
+            const dy = row[rootCols.y] - rowFrames[0][rootCols.y];
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            dispEl.textContent =
+              'fwd ' + dx.toFixed(2) + 'm  lat ' + dy.toFixed(2) + 'm  |  ' + dist.toFixed(2) + 'm' +
+              '\nframe ' + frameIdx + '/' + (rowFrames.length - 1);
+          }
         }
         renderer.render(scene, camera);
     }
