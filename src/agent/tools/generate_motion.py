@@ -27,7 +27,6 @@ DEFAULT_DOF_POS: list[float] = [
 
 # Root position / orientation defaults (MuJoCo Z-up: X=forward, Y=left, Z=up)
 DEFAULT_ROOT_HEIGHT = 0.75
-DEFAULT_ROOT_QUAT: list[float] = [1.0, 0.0, 0.0, 0.0]  # identity wxyz
 
 # Direction → (dx, dy) unit vectors in MuJoCo ground plane (X=forward, Y=left)
 _DIRECTION_VECTORS: dict[str, tuple[float, float]] = {
@@ -221,12 +220,10 @@ def generate_motion_impl(
     has_locomotion = bool(move_direction and move_direction.strip())
     initial_root: list[float] | None = None
     final_root: list[float] | None = None
-    root_quat: list[float] | None = None
 
     if has_locomotion:
         initial_root = [0.0, 0.0, DEFAULT_ROOT_HEIGHT]
         final_root = _compute_final_root_pos(move_direction, move_distance)
-        root_quat = DEFAULT_ROOT_QUAT
         if final_root:
             constraints_applied.append(
                 f"locomotion:{move_direction.strip()}:{move_distance:.1f}m"
@@ -247,12 +244,9 @@ def generate_motion_impl(
                 prompt,
                 duration,
                 diffusion_steps,
-                initial_dof_pos=DEFAULT_DOF_POS,
                 final_dof_pos=DEFAULT_DOF_POS if return_to_standing else None,
                 initial_root_pos=initial_root,
-                initial_root_quat=root_quat,
                 final_root_pos=final_root,
-                final_root_quat=root_quat,
             )
         except httpx.HTTPError:
             log.warning("Kimodo call failed for prompt: %s", prompt, exc_info=True)
