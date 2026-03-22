@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
 from textwrap import dedent
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 from strands import Agent
 from strands.models.openai import OpenAIModel
 
 from agent.tools.generate_motion import generate_motion
-from g1.audio import say_text
 
 SYSTEM_PROMPT = dedent("""
     You are a motion planner and speech assistant for the Unitree G1 humanoid robot.
@@ -47,12 +48,8 @@ SYSTEM_PROMPT = dedent("""
 def create_agent(
     *,
     tools: Sequence[Any] | None = None,
-    model_id: str = "gpt-4o",
+    model_id: str = "gpt-4.1",
 ) -> Agent:
     model = OpenAIModel(model_id=model_id)
-    resolved_tools = list(tools) if tools is not None else [generate_motion, say_text]
-    return Agent(
-        model=model,
-        system_prompt=SYSTEM_PROMPT,
-        tools=resolved_tools,
-    )
+    resolved_tools = list(tools) if tools is not None else [generate_motion]
+    return Agent(model=model, system_prompt=SYSTEM_PROMPT, tools=resolved_tools)

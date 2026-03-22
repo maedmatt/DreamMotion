@@ -159,7 +159,7 @@ def api_generate(req: GenerateRequest):
     try:
         agent_result = run_agent_for_web(
             prompt,
-            tts_target=req.tts_target,
+            tts_target=req.tts_target,  # pyright: ignore[reportArgumentType]
             speaker_id=req.speaker_id,
             diffusion_steps=diffusion_steps,
         )
@@ -176,7 +176,7 @@ def api_generate(req: GenerateRequest):
         if isinstance(motion.get("prompt"), str)
     ]
     durations = [
-        float(motion["duration"])
+        float(motion["duration"])  # pyright: ignore[reportArgumentType]
         for motion in agent_result.motions
         if isinstance(motion.get("duration"), int | float)
     ]

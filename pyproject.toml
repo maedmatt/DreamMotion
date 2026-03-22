@@ -11,7 +11,6 @@ dependencies = [
     "tyro",
     "fastapi",
     "uvicorn",
-    "numpy>=2.4.3",
 ]
 
 [project.scripts]
@@ -21,11 +20,11 @@ web = "web.server:main"
 
 [project.optional-dependencies]
 deploy = ["robojudo", "mujoco-python-viewer"]
-# tts = ["unitree-sdk2py"]
+tts = ["unitree-sdk2py"]
 
 [tool.uv.sources]
 robojudo = { path = "../RoboJuDo", editable = true }
-# unitree-sdk2py = { path = "../unitree_sdk2_python", editable = true }
+unitree-sdk2py = { path = "../unitree_sdk2_python", editable = true }
 
 [dependency-groups]
 dev = [
