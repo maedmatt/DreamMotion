@@ -43,11 +43,15 @@ def treasure_hunt(
       pick_up  — walk to the object and pick it up with the right hand.
                  Use for: "pick up the X", "grab the X",
                           "get the X", "bring me the X"
+      point_at — detect the object and point at it with the right arm.
+                 No walking — points in place from wherever the robot stands.
+                 Use for: "point at the X", "show me the X",
+                          "indicate the X", "where is the X, point to it"
 
     Args:
         target_object: Natural language description of the object
                        (e.g. "red box", "yellow ball", "water bottle").
-        action: One of "locate", "walk_to", "step_on", "pick_up".
+        action: One of "locate", "walk_to", "step_on", "pick_up", "point_at".
 
     Returns:
         Dictionary with final_state, coordinates found, and any
@@ -59,10 +63,18 @@ def treasure_hunt(
     say = _make_say_callback()
 
     act: Action = (
-        action if action in ("locate", "walk_to", "step_on", "pick_up") else "step_on"
+        action
+        if action in ("locate", "walk_to", "step_on", "pick_up", "point_at")
+        else "step_on"
     )  # type: ignore[assignment]
 
     sdk = get_sdk_controller() if act != "locate" else None
+
+    arm = None
+    if act == "point_at":
+        from g1.arm.arm_controller import get_arm_controller
+
+        arm = get_arm_controller()
 
     machine = TreasureHuntStateMachine(
         target_object=target_object,
@@ -71,6 +83,7 @@ def treasure_hunt(
         transforms=transforms,
         sdk_controller=sdk,
         say=say,  # type: ignore[arg-type]
+        arm_controller=arm,
         action=act,
     )
     return machine.run()
