@@ -58,10 +58,12 @@ def run_agent_for_web(
     tts_target: SpeechTarget,
     speaker_id: int,
     diffusion_steps: int,
+    voice: str = "alloy",
 ) -> WebAgentRunResult:
     state = _ToolState(tts_target=tts_target, speaker_id=speaker_id)
     default_diffusion_steps = diffusion_steps
     default_speaker_id = speaker_id
+    default_voice = voice
 
     @tool
     def say_text(text: str, speaker_id: int = default_speaker_id) -> dict[str, object]:
@@ -84,7 +86,7 @@ def run_agent_for_web(
 
         if state.tts_target == "robot":
             response = {
-                **say_text_impl(message, speaker_id=speaker_id),
+                **say_text_impl(message, speaker_id=speaker_id, voice=default_voice),
                 "target": "robot",
                 "handled": True,
             }
@@ -143,14 +145,37 @@ def run_agent_for_web(
     if not state.spoken_text and reply_text:
         state.spoken_text = reply_text
 
-    if state.speech is None and state.spoken_text:
-        state.speech = {
-            "text": state.spoken_text,
-            "speaker_id": state.speaker_id,
-            "status": "ready" if state.tts_target == "web" else "not_called",
-            "target": state.tts_target,
-            "handled": False,
-        }
+    if state.spoken_text and (
+        state.speech is None
+        or (
+            state.tts_target == "robot"
+            and state.speech.get("status") == "not_called"
+        )
+    ):
+        if state.tts_target == "robot":
+            state.speech = {
+                **say_text_impl(state.spoken_text, speaker_id=state.speaker_id, voice=default_voice),
+                "target": "robot",
+                "handled": True,
+                "fallback": True,
+            }
+        else:
+            state.speech = {
+                "text": state.spoken_text,
+                "speaker_id": state.speaker_id,
+                "status": "ready",
+                "target": "web",
+                "handled": False,
+            }
+
+    if (
+        state.tts_target == "robot"
+        and state.speech
+        and isinstance(state.speech.get("error"), str)
+    ):
+        error = state.speech["error"].strip()
+        if error:
+            state.warning = error
 
     return WebAgentRunResult(
         reply_text=reply_text,

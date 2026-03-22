@@ -58,6 +58,7 @@ class GenerateRequest(BaseModel):
     prompt: str
     tts_target: str = "web"
     speaker_id: int = 1
+    voice: str = "alloy"
 
 
 class TranscribeRequest(BaseModel):
@@ -166,6 +167,7 @@ def api_generate(req: GenerateRequest):
             tts_target=req.tts_target,  # pyright: ignore[reportArgumentType]
             speaker_id=req.speaker_id,
             diffusion_steps=diffusion_steps,
+            voice=req.voice,
         )
     except Exception as exc:
         logger.exception("Agent invocation failed")
@@ -431,10 +433,15 @@ def speak(req: SpeakRequest):
 
     if req.target == "robot":
         try:
-            from g1.audio.client import get_unitree_audio_service
+            from g1.audio.tool import say_text_impl
 
-            service = get_unitree_audio_service()
-            result = service.say_text(text=req.text, speaker_id=req.speaker_id)
+            result = say_text_impl(
+                text=req.text,
+                speaker_id=req.speaker_id,
+                voice=req.voice,
+            )
+            if result.get('status') == 'failed':
+                raise RuntimeError(result.get('error') or 'Robot speaker failed')
             return {"status": "ok", "detail": result}
         except Exception as exc:
             logger.exception("Robot TTS failed")
