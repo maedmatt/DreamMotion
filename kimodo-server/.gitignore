@@ -1,0 +1,8 @@
+kimodo/
+__pycache__/
+*.pyc
+*.pt
+*.npz
+*.csv
+.env
+.DS_Store

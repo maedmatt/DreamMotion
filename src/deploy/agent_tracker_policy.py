@@ -21,22 +21,15 @@ from robojudo.policy.protomotions_bm_tracker_policy import (
 from robojudo.policy.protomotions_utils import MotionPlayer
 from robojudo.utils.rotation import TransformAlignment
 
+from agent.tools.generate_motion import DEFAULT_DOF_POS as _DEFAULT_DOF_POS_LIST
+
 logger = logging.getLogger(__name__)
 
 # ── Toggle this to enable/disable blend edges ──
 BLEND_ENABLED = False
 BLEND_DURATION_S = 0.5
 
-# fmt: off
-# Default standing joint angles (29 DOFs, same order as ONNX metadata)
-DEFAULT_DOF_POS = np.array([
-    -0.312,  0.0,    0.0,   0.669, -0.363,  0.0,    # left leg
-    -0.312,  0.0,    0.0,   0.669, -0.363,  0.0,    # right leg
-     0.0,    0.0,    0.0,                            # waist
-     0.2,    0.2,    0.0,   0.6,   0.0, 0.0, 0.0,   # left arm
-     0.2,   -0.2,    0.0,   0.6,   0.0, 0.0, 0.0,   # right arm
-], dtype=np.float32)
-# fmt: on
+DEFAULT_DOF_POS = np.array(_DEFAULT_DOF_POS_LIST, dtype=np.float32)
 
 
 @policy_registry.register

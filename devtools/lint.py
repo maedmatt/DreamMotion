@@ -1,7 +1,7 @@
 import subprocess
 import sys
 
-SRC_PATHS = ["src", "devtools", "scripts"]
+SRC_PATHS = ["src", "devtools"]
 
 
 def main() -> int:

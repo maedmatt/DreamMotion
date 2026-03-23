@@ -1,0 +1,108 @@
+services:
+  # Kimodo text encoder: Llama 3 8B + LLM2Vec adapters
+  # First run downloads weights (~16GB). Serves on port 9550.
+  text-encoder:
+    image: kimodo:1.0
+    container_name: text-encoder
+    working_dir: /workspace
+    entrypoint: ["bash", "-c"]
+    command: ["python -m kimodo.scripts.run_text_encoder_server"]
+    volumes:
+      - ./kimodo:/workspace
+      - ${HOME}/.cache/huggingface:/workspace/.cache/huggingface
+      - ${HOME}/.cache/huggingface/token:/workspace/.cache/huggingface/token:ro
+    ports:
+      - "9550:9550"
+    environment:
+      - HF_HOME=/workspace/.cache/huggingface
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    shm_size: "16gb"
+    ipc: host
+    healthcheck:
+      test: ["CMD", "bash", "-lc", "curl -fsS http://localhost:9550/ > /dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+      start_period: 120s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # Kimodo Motion Generation API
+  # Loads G1 diffusion model (~3GB VRAM), connects to text-encoder.
+  # Endpoints: /generate (JSON), /generate/csv, /generate/pt
+  api:
+    image: kimodo-api:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: kimodo-api
+    working_dir: /workspace
+    entrypoint: ["bash", "-c"]
+    command: ["python server.py"]
+    volumes:
+      - ./kimodo:/workspace
+      - ./api/server.py:/workspace/server.py
+      - ./api/dof_constraints.py:/workspace/dof_constraints.py
+      - ./api/csv_to_motionlib.py:/workspace/csv_to_motionlib.py
+      - ${HOME}/.cache/huggingface:/workspace/.cache/huggingface
+      - ${HOME}/.cache/huggingface/token:/workspace/.cache/huggingface/token:ro
+    ports:
+      - "8420:8420"
+    environment:
+      - TEXT_ENCODER_URL=http://text-encoder:9550/
+      - HF_HOME=/workspace/.cache/huggingface
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    shm_size: "16gb"
+    ipc: host
+    depends_on:
+      text-encoder:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # Optional: Kimodo interactive demo (viser 3D visualization)
+  # Access at http://localhost:7860
+  demo:
+    image: kimodo:1.0
+    container_name: kimodo-demo
+    working_dir: /workspace
+    entrypoint: ["bash", "-c"]
+    command: ["python -m kimodo.demo"]
+    volumes:
+      - ./kimodo:/workspace
+      - ${HOME}/.cache/huggingface:/workspace/.cache/huggingface
+      - ${HOME}/.cache/huggingface/token:/workspace/.cache/huggingface/token:ro
+    ports:
+      - "7860:7860"
+    environment:
+      - TEXT_ENCODER_URL=http://text-encoder:9550/
+      - SERVER_PORT=7860
+      - HF_HOME=/workspace/.cache/huggingface
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    shm_size: "16gb"
+    ipc: host
+    depends_on:
+      text-encoder:
+        condition: service_healthy
+    profiles:
+      - demo
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

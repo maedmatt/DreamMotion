@@ -1,4 +1,4 @@
-"""Web UI server wrapping the g1-treasure-hunt agent.
+"""Web UI server wrapping the DreamMotion agent.
 
 Provides a FastAPI web interface with:
 - Text and voice input for agent requests
@@ -523,24 +523,10 @@ def main() -> None:
     app.state.kimodo_url = kimodo_url
     app.state.diffusion_steps = args.diffusion_steps
 
-    # Mount static files (g1_description first for higher priority)
-    g1_desc_dir = (
-        WEB_DIR.parent.parent.parent
-        / "hack26-ethrc-deploy"
-        / "scripts"
-        / "static"
-        / "g1_description"
-    )
-    if g1_desc_dir.is_dir():
-        app.mount(
-            "/static/g1_description",
-            StaticFiles(directory=g1_desc_dir),
-            name="g1_description",
-        )
-    elif (STATIC_DIR / "g1_description").is_dir():
-        pass  # already covered by the general static mount
-    else:
+    # g1_description submodule provides URDF meshes for the 3D viewer
+    if not (STATIC_DIR / "g1_description").is_dir():
         print("  WARNING: g1_description not found, 3D viewer may not work")
+        print("  Run: git submodule update --init")
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 

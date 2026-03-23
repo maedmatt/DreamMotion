@@ -7,4 +7,5 @@ __pycache__/
 output/
 logs/
 .native/
-yolov8l-worldv2.pt
+*.pt
+*.onnx

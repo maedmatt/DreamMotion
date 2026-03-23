@@ -336,6 +336,60 @@ wheels = [
 ]
 
 [[package]]
+name = "dreammotion"
+version = "0.0.1"
+source = { editable = "." }
+dependencies = [
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "openai" },
+    { name = "python-dotenv" },
+    { name = "sounddevice" },
+    { name = "strands-agents", extra = ["openai"] },
+    { name = "tyro" },
+    { name = "uvicorn" },
+]
+
+[package.optional-dependencies]
+deploy = [
+    { name = "mujoco-python-viewer" },
+    { name = "robojudo" },
+]
+tts = [
+    { name = "unitree-sdk2py" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "basedpyright" },
+    { name = "pre-commit" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "mujoco-python-viewer", marker = "extra == 'deploy'" },
+    { name = "openai" },
+    { name = "python-dotenv" },
+    { name = "robojudo", marker = "extra == 'deploy'", editable = "../RoboJuDo" },
+    { name = "sounddevice" },
+    { name = "strands-agents", extras = ["openai"] },
+    { name = "tyro" },
+    { name = "unitree-sdk2py", marker = "extra == 'tts'", editable = "../unitree_sdk2_python" },
+    { name = "uvicorn" },
+]
+provides-extras = ["deploy", "tts"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "basedpyright" },
+    { name = "pre-commit" },
+    { name = "ruff" },
+]
+
+[[package]]
 name = "easydict"
 version = "1.13"
 source = { registry = "https://pypi.org/simple" }
@@ -406,60 +460,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/51/7c/f60c259dcbf4f0c47cc4ddb8f7720d2dcdc8888c8e5ad84c73ea4531cc5b/fsspec-2026.2.0.tar.gz", hash = "sha256:6544e34b16869f5aacd5b90bdf1a71acb37792ea3ddf6125ee69a22a53fb8bff", size = 313441, upload-time = "2026-02-05T21:50:53.743Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e6/ab/fb21f4c939bb440104cc2b396d3be1d9b7a9fd3c6c2a53d98c45b3d7c954/fsspec-2026.2.0-py3-none-any.whl", hash = "sha256:98de475b5cb3bd66bedd5c4679e87b4fdfe1a3bf4d707b151b3c07e58c9a2437", size = 202505, upload-time = "2026-02-05T21:50:51.819Z" },
-]
-
-[[package]]
-name = "g1-voice2motion"
-version = "0.0.1"
-source = { editable = "." }
-dependencies = [
-    { name = "fastapi" },
-    { name = "httpx" },
-    { name = "openai" },
-    { name = "python-dotenv" },
-    { name = "sounddevice" },
-    { name = "strands-agents", extra = ["openai"] },
-    { name = "tyro" },
-    { name = "uvicorn" },
-]
-
-[package.optional-dependencies]
-deploy = [
-    { name = "mujoco-python-viewer" },
-    { name = "robojudo" },
-]
-tts = [
-    { name = "unitree-sdk2py" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "basedpyright" },
-    { name = "pre-commit" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "fastapi" },
-    { name = "httpx" },
-    { name = "mujoco-python-viewer", marker = "extra == 'deploy'" },
-    { name = "openai" },
-    { name = "python-dotenv" },
-    { name = "robojudo", marker = "extra == 'deploy'", editable = "../RoboJuDo" },
-    { name = "sounddevice" },
-    { name = "strands-agents", extras = ["openai"] },
-    { name = "tyro" },
-    { name = "unitree-sdk2py", marker = "extra == 'tts'", editable = "../unitree_sdk2_python" },
-    { name = "uvicorn" },
-]
-provides-extras = ["deploy", "tts"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "basedpyright" },
-    { name = "pre-commit" },
-    { name = "ruff" },
 ]
 
 [[package]]

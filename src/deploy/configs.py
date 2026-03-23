@@ -8,6 +8,8 @@ with ConfigManager(config_name=...).
 
 from __future__ import annotations
 
+import os
+
 from robojudo.config import cfg_registry
 from robojudo.config.g1.env.g1_mujuco_env_cfg import G1MujocoEnvCfg
 from robojudo.config.g1.env.g1_real_env_cfg import G1RealEnvCfg, G1UnitreeCfg
@@ -60,7 +62,7 @@ class g1_agent_locomimic_real(g1_agent_locomimic):
 
     env: G1RealEnvCfg = G1RealEnvCfg(
         unitree=G1UnitreeCfg(
-            net_if="enx806d970b81c5",
+            net_if=os.environ.get("UNITREE_NETWORK_INTERFACE", ""),
         ),
         born_place_align=False,
     )

@@ -1,0 +1,20 @@
+# Extends the Kimodo base image with FastAPI server and custom files.
+# Build the base image first: cd kimodo && docker compose build
+# Then build this: docker build -f Dockerfile.api -t kimodo-api:latest .
+
+ARG BASE_IMAGE=kimodo:1.0
+FROM ${BASE_IMAGE}
+
+# Install API dependencies (system-wide so subprocesses can see them)
+RUN pip install --no-cache-dir fastapi uvicorn
+
+# Copy custom API files into the workspace
+COPY api/server.py /workspace/server.py
+COPY api/dof_constraints.py /workspace/dof_constraints.py
+COPY api/csv_to_motionlib.py /workspace/csv_to_motionlib.py
+
+WORKDIR /workspace
+
+EXPOSE 8420
+
+CMD ["python", "server.py"]
