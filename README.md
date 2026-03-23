@@ -74,32 +74,6 @@ DreamMotion is modular — you only need the dependencies for the parts you use.
 | `uv run agent` | Text CLI for motion generation | - |
 | `uv run deploy` | Robot control loop — watches `output/` and plays motions | [docs/sim2sim.md](docs/sim2sim.md), [docs/sim2real.md](docs/sim2real.md) |
 
-## Project structure
-
-```
-kimodo-server/                       # Docker-based Kimodo motion generation API
-  setup.sh                         # one-command setup
-  docker-compose.yaml              # text-encoder + API services
-  api/                             # FastAPI server, constraint helpers, csv→pt converter
-src/
-  main.py                          # agent CLI entry point
-  agent/
-    agent.py                       # Strands agent, system prompt
-    prompt_refiner.py              # GPT-4.1 prompt optimization
-    tools/
-      generate_motion.py           # @tool — calls Kimodo, saves .pt files
-  web/
-    server.py                      # FastAPI web UI server
-    agent_runner.py                # web-specific agent wrapper with TTS
-  deploy/
-    run.py                         # deploy entry point (tyro CLI)
-    agent_tracker_policy.py        # BeyondMimic tracker with blend edges
-    configs.py                     # LocoMimic configs (sim + real)
-  g1/
-    audio/                         # Unitree robot speaker (TTS)
-    speech_input/                  # Microphone recording + transcription
-```
-
 ## Docs
 
 - [Kimodo server](kimodo-server/) — Docker-based motion generation backend
@@ -114,3 +88,7 @@ src/
 - [RoboJuDo](https://github.com/HansZ8/RoboJuDo) — RL deploy pipeline with BeyondMimic tracking
 - [Strands Agents](https://github.com/strands-agents/sdk-python) — LLM agent framework
 - [g1_description](https://github.com/isri-aist/g1_description) — G1 URDF/meshes for 3D viewer
+
+## Contributors
+
+[shafeef901](https://github.com/shafeef901) · [maedmatt](https://github.com/maedmatt) · [Thisanwerss](https://github.com/Thisanwerss) · [SloDamn](https://github.com/SloDamn) · [saadl27](https://github.com/saadl27) · [gguidone](https://github.com/gguidone)
