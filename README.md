@@ -2,7 +2,8 @@
 
 LLM agent that generates Unitree G1 humanoid robot motions from natural language. Speak or type what you want the robot to do, and DreamMotion plans the motion, generates it with a diffusion model, and deploys it to simulation or real hardware.
 
-Built in 48 hours at HACK26, a hackathon organized by [ETH Robotics Club](https://www.ethrobotics.ch/).
+> [!NOTE]
+> Built in 48 hours at HACK26, a hackathon organized by [ETH Robotics Club](https://www.ethrobotics.ch/).
 
 ```mermaid
 graph LR
