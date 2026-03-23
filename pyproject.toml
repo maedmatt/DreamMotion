@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-agent = "main:main"
+agent = "agent.cli:main"
 deploy = "deploy.run:main"
 web = "web.server:main"
 robot-audio-test = "g1.audio.diagnostics:main"
@@ -40,9 +40,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agent", "src/g1", "src/deploy", "src/web", "src/unitree_cpp"]
-
-[tool.hatch.build.targets.wheel.force-include]
-"src/main.py" = "main.py"
 
 [tool.ruff]
 target-version = "py311"
