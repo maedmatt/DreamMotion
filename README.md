@@ -62,9 +62,8 @@ DreamMotion is modular — you only need the dependencies for the parts you use.
 - Set `UNITREE_NETWORK_INTERFACE` in `.env` to your Ethernet adapter connected to the G1 (find with `ip link` or `ifconfig`)
 - Install with: `uv sync --extra deploy --extra tts`
 
-## Safety
-
-> **Warning:** Always preview generated motions in MuJoCo simulation before deploying to a physical robot. Diffusion-generated motions can produce unexpected poses or joint configurations that may damage hardware. Use `uv run deploy` (sim2sim) to verify the motion looks reasonable before running with `--config g1_agent_locomimic_real`.
+> [!WARNING]
+> Always preview motions in MuJoCo before running on the real robot. Generated trajectories can produce weird joint angles that may damage hardware. Run `uv run deploy` first and check the motion looks right before using `--config g1_agent_locomimic_real`.
 
 ## Entry points
 
